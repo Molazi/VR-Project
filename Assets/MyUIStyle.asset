@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99cd23c29c102124a9b60ed45a610680, type: 3}
+  m_Name: MyUIStyle
+  m_EditorClassIdentifier: Assembly-CSharp::UIStyleConfig
+  buttonColor: {r: 0, g: 0, b: 0, a: 0.8}
+  buttonTextColor: {r: 1, g: 1, b: 1, a: 1}
+  panelBgColor: {r: 0.24528301, g: 0.24528301, b: 0.24528301, a: 0.5}
+  textColor: {r: 1, g: 1, b: 1, a: 1}
+  sliderFillColor: {r: 0, g: 0.6126497, b: 1, a: 1}
+  sliderBgColor: {r: 0.2, g: 0.2, b: 0.2, a: 1}
+  mainFont: {fileID: 0}
+  titleFontSize: 24
+  labelFontSize: 16
+  buttonFontSize: 14
+  buttonSize: {x: 90, y: 40}
+  sliderSize: {x: 210, y: 20}
+  uiDistance: 2
+  uiScale: {x: 0.004, y: 0.004, z: 0.003}
