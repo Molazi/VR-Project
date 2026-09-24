@@ -430,7 +430,6 @@ public class GameManager : MonoBehaviour
         return "Слой " + idx;
     }
 
-    // ===================== UI =====================
     void CreateUI()
     {
         uiRoot = new GameObject("FixedUI", typeof(RectTransform), typeof(Canvas));
@@ -525,7 +524,6 @@ public class GameManager : MonoBehaviour
         paintButton.onClick.AddListener(() => currentMode = ToolMode.Paint);
         waterButton.onClick.AddListener(() => currentMode = ToolMode.Water);
 
-        // Широкие кнопки воды
         float bigH = 65f, hp = 30f, gap = 10f;
         float baseY = bm + mbh + 10f;
 
