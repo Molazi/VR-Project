@@ -252,18 +252,22 @@ public class GameManager : MonoBehaviour
             if (hit.collider.GetComponent<Terrain>()) PerformAction(hit.point);
     }
 
+    void DeformTerrain(Vector3 worldPos, float signedStrength)
+    {
+        TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize);
+        PaintTerrainByHeight(worldPos);
+    }
+
     void PerformAction(Vector3 worldPos)
     {
         switch (currentMode)
         {
             case ToolMode.Dig:
-                TerrainDeformer.Deform(targetTerrain, worldPos, -strength * Time.deltaTime, brushSize);
-                PaintTerrainByHeight(worldPos);
+                DeformTerrain(worldPos, -strength * Time.deltaTime);
                 SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), digParticleCount, digParticleSize, 1.5f, digParticleForce);
                 break;
             case ToolMode.Raise:
-                TerrainDeformer.Deform(targetTerrain, worldPos, strength * Time.deltaTime, brushSize);
-                PaintTerrainByHeight(worldPos);
+                DeformTerrain(worldPos, strength * Time.deltaTime);
                 SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), raiseParticleCount, raiseParticleSize, 1.5f, raiseParticleForce);
                 break;
             case ToolMode.Paint:
