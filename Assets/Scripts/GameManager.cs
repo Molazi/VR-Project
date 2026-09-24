@@ -252,19 +252,27 @@ public class GameManager : MonoBehaviour
             if (hit.collider.GetComponent<Terrain>()) PerformAction(hit.point);
     }
 
+    void ApplyDeformTool(Vector3 worldPos, float signedStrength, int particleCount, float particleSize, float particleForce)
+    {
+        DeformTerrain(worldPos, signedStrength);
+        SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), particleCount, particleSize, 1.5f, particleForce);
+    }
+
+    void DeformTerrain(Vector3 worldPos, float signedStrength)
+    {
+        TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize);
+        PaintTerrainByHeight(worldPos);
+    }
+
     void PerformAction(Vector3 worldPos)
     {
         switch (currentMode)
         {
             case ToolMode.Dig:
-                TerrainDeformer.Deform(targetTerrain, worldPos, -strength * Time.deltaTime, brushSize);
-                PaintTerrainByHeight(worldPos);
-                SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), digParticleCount, digParticleSize, 1.5f, digParticleForce);
+                ApplyDeformTool(worldPos, -strength * Time.deltaTime, digParticleCount, digParticleSize, digParticleForce);
                 break;
             case ToolMode.Raise:
-                TerrainDeformer.Deform(targetTerrain, worldPos, strength * Time.deltaTime, brushSize);
-                PaintTerrainByHeight(worldPos);
-                SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), raiseParticleCount, raiseParticleSize, 1.5f, raiseParticleForce);
+                ApplyDeformTool(worldPos, strength * Time.deltaTime, raiseParticleCount, raiseParticleSize, raiseParticleForce);
                 break;
             case ToolMode.Paint:
                 TerrainDeformer.PaintTexture(targetTerrain, worldPos, brushSize, paintStrength, paintLayer);
@@ -426,7 +434,6 @@ public class GameManager : MonoBehaviour
         return "Слой " + idx;
     }
 
-    // ===================== UI =====================
     void CreateUI()
     {
         uiRoot = new GameObject("FixedUI", typeof(RectTransform), typeof(Canvas));
@@ -521,7 +528,6 @@ public class GameManager : MonoBehaviour
         paintButton.onClick.AddListener(() => currentMode = ToolMode.Paint);
         waterButton.onClick.AddListener(() => currentMode = ToolMode.Water);
 
-        // Широкие кнопки воды
         float bigH = 65f, hp = 30f, gap = 10f;
         float baseY = bm + mbh + 10f;
 
