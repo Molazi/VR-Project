@@ -1675,6 +1675,8 @@ MonoBehaviour:
   currentMode: 0
   strength: 0.02
   brushSize: 2.5
+  minTerrainHeight: 10
+  maxTerrainHeight: 190
   paintLayer: 0
   paintStrength: 0.5
   actionInterval: 0.05
