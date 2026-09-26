@@ -2,7 +2,7 @@ using UnityEngine;
 
 public static class TerrainDeformer
 {
-    public static void Deform(Terrain terrain, Vector3 worldPos, float strength, float brushSize)
+    public static void Deform(Terrain terrain, Vector3 worldPos, float strength, float brushSize, float minTerrainHeight, float maxTerrainHeight)
     {
         if (terrain == null) return;
         TerrainData data = terrain.terrainData;
@@ -18,12 +18,16 @@ public static class TerrainDeformer
         int w = x1 - x0 + 1, h = y1 - y0 + 1;
         if (w <= 0 || h <= 0) return;
         float[,] heights = data.GetHeights(x0, y0, w, h);
+        float minHeight = minTerrainHeight / data.size.y;
+        float maxHeight = maxTerrainHeight / data.size.y;
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
                 float dist = Vector2.Distance(new Vector2(x0 + x, y0 + y), new Vector2(cx, cy));
                 float influence = Mathf.Clamp01(1f - dist / radius);
-                heights[y, x] += strength * influence;
+                float newHeight = heights[y, x] + strength * influence;
+                newHeight = Mathf.Clamp(newHeight, minHeight, maxHeight);
+                heights[y, x] = newHeight;
             }
         data.SetHeights(x0, y0, heights);
         data.SyncHeightmap();
