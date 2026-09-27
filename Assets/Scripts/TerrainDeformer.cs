@@ -2,7 +2,7 @@ using UnityEngine;
 
 public static class TerrainDeformer
 {
-    public static void Deform(Terrain terrain, Vector3 worldPos, float strength, float brushSize, float minTerrainHeight, float maxTerrainHeight)
+    public static void Deform(Terrain terrain, Vector3 worldPos, float strength, float brushSize, float minTerrainHeight, float maxTerrainHeight, float smoothingStrength)
     {
         if (terrain == null) return;
         TerrainData data = terrain.terrainData;
@@ -21,6 +21,7 @@ public static class TerrainDeformer
         float minHeight = minTerrainHeight / data.size.y;
         float maxHeight = maxTerrainHeight / data.size.y;
         for (int y = 0; y < h; y++)
+        {
             for (int x = 0; x < w; x++)
             {
                 float dist = Vector2.Distance(new Vector2(x0 + x, y0 + y), new Vector2(cx, cy));
@@ -29,6 +30,44 @@ public static class TerrainDeformer
                 newHeight = Mathf.Clamp(newHeight, minHeight, maxHeight);
                 heights[y, x] = newHeight;
             }
+        }
+
+        if (smoothingStrength <= 0f)
+        {
+            data.SetHeights(x0, y0, heights);
+            data.SyncHeightmap();
+            return;
+        }
+        
+        float[,] smoothedHeights = new float[h, w];
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                float sum = 0f;
+                int count = 0;
+                for (int offsetY = -1; offsetY <= 1; offsetY++)
+                {
+                    for (int offsetX = -1; offsetX <= 1; offsetX++)
+                    {
+                        int neighborX = x + offsetX;
+                        int neighborY = y + offsetY;
+
+                        if (neighborX < 0 || neighborX >= w || neighborY < 0 || neighborY >= h)
+                            continue;
+
+                        sum += heights[neighborY, neighborX];
+                        count++;
+                    }
+                }
+                float averageHeight = sum / count;
+                float dist = Vector2.Distance(new Vector2(x0 + x, y0 + y), new Vector2(cx, cy));
+                float influence = Mathf.Clamp01(1f - dist / radius);
+                float smoothAmount = influence * Mathf.Clamp01(smoothingStrength);
+                smoothedHeights[y, x] = Mathf.Lerp(heights[y, x], averageHeight, smoothAmount);
+            }
+        }
+        heights = smoothedHeights;
         data.SetHeights(x0, y0, heights);
         data.SyncHeightmap();
     }
