@@ -23,6 +23,7 @@ public class GameManager : MonoBehaviour
     public ToolMode currentMode = ToolMode.Dig;
     public float strength = 0.8f;
     public float brushSize = 2.5f;
+    public float smoothingStrength = 0.3f;
     public float minTerrainHeight = 10f;
     public float maxTerrainHeight = 190f;
     public int paintLayer = 0;
@@ -262,7 +263,7 @@ public class GameManager : MonoBehaviour
 
     void DeformTerrain(Vector3 worldPos, float signedStrength)
     {
-        TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize, minTerrainHeight, maxTerrainHeight);
+        TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize, minTerrainHeight, maxTerrainHeight, smoothingStrength);
         PaintTerrainByHeight(worldPos);
     }
 
