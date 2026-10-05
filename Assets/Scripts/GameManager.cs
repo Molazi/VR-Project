@@ -81,8 +81,17 @@ public class GameManager : MonoBehaviour
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
     private Button clearWaterButton;
-    private Button undoWaterButton;
-    private List<ProceduralWaterMesh> waterHistory = new List<ProceduralWaterMesh>();
+    private class WaterRecord
+    {
+        public ProceduralWaterMesh water;
+        public WaterState state;
+        public WaterRecord(ProceduralWaterMesh water, WaterState state)
+        {
+            this.water = water;
+            this.state = state;
+        }
+    }
+    private readonly List<WaterRecord> waterHistory = new();
 
     private float lastActionTime = 0f;
     public float uiDistance = 1.8f;
@@ -207,24 +216,9 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        if (!grip && activeTerrainAction != null)
+        if (!grip)
         {
-            activeTerrainAction.Complete();
-
-            if (activeTerrainAction.HasChanges)
-                actionHistory.Add(activeTerrainAction);
-
-            activeTerrainAction = null;
-        }
-
-        if (!grip && activePaintAction != null)
-        {
-            activePaintAction.Complete();
-
-            if (activePaintAction.HasChanges)
-                actionHistory.Add(activePaintAction);
-
-            activePaintAction = null;
+            CompleteActiveActions();
         }
 
         if (uiActive && uiRoot != null)
@@ -365,9 +359,18 @@ public class GameManager : MonoBehaviour
                 SpawnPhysicsParticles(worldPos, Random.ColorHSV(0f, 1f, 0.7f, 1f, 0.8f, 1f), paintParticleCount, paintParticleSize, 2f, paintParticleForce);
                 break;
             case ToolMode.Water:
+            {
+                CompleteActiveActions();
+                List<WaterState> before = CaptureWaterStates();
                 PourWater(worldPos);
+                List<WaterState> after = CaptureWaterStates();
+                if (!WaterStatesEqual(before, after))
+                {
+                    actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+                }
                 SpawnPhysicsParticles(worldPos, new Color(0.3f, 0.5f, 1f), waterParticleCount, waterParticleSize, 3f, waterParticleForce);
                 break;
+            }
         }
     }
 
@@ -432,38 +435,128 @@ public class GameManager : MonoBehaviour
         RemoveOldWater(center, waterCleanupRadius);
         ProceduralWaterMesh water = Instantiate(waterPrefab, center, Quaternion.identity);
         water.transform.localScale = Vector3.one;
-        water.BuildFromBoundary(center, contour.ToArray(), waterLevel);
-        waterHistory.Add(water);
+        Vector3[] contourPoints = contour.ToArray();
+        water.BuildFromBoundary(center, contourPoints, waterLevel);
+        WaterState state = new WaterState(center, contourPoints, waterLevel);
+        waterHistory.Add(new WaterRecord(water, state));
     }
 
     void RemoveOldWater(Vector3 pos, float radius)
     {
-        waterHistory.RemoveAll(w => w == null);
         for (int i = waterHistory.Count - 1; i >= 0; i--)
         {
-            if (Vector3.Distance(pos, waterHistory[i].transform.position) <= radius)
+            WaterRecord record = waterHistory[i];
+            if (record.water == null)
             {
-                Destroy(waterHistory[i].gameObject);
+                waterHistory.RemoveAt(i);
+                continue;
+            }
+            if (Vector3.Distance(pos, record.water.transform.position) <= radius)
+            {
+                Destroy(record.water.gameObject);
                 waterHistory.RemoveAt(i);
             }
         }
     }
 
-    void UndoLastWater()
-    {
-        for (int i = waterHistory.Count - 1; i >= 0; i--)
-        {
-            if (waterHistory[i] == null) { waterHistory.RemoveAt(i); continue; }
-            Destroy(waterHistory[i].gameObject);
-            waterHistory.RemoveAt(i);
-            break;
-        }
-    }
-
     void ClearAllWater()
     {
-        foreach (var w in FindObjectsOfType<ProceduralWaterMesh>()) Destroy(w.gameObject);
+        List<WaterState> before = CaptureWaterStates();
+
+        if (before.Count == 0)
+            return;
+
+        foreach (WaterRecord record in waterHistory)
+        {
+            if (record.water != null)
+                Destroy(record.water.gameObject);
+        }
+
         waterHistory.Clear();
+
+        List<WaterState> after = CaptureWaterStates();
+
+        actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+    }
+
+    List<WaterState> CaptureWaterStates()
+    {
+        List<WaterState> states = new();
+
+        for (int i = waterHistory.Count - 1; i >= 0; i--)
+        {
+            WaterRecord record = waterHistory[i];
+
+            if (record.water == null)
+            {
+                waterHistory.RemoveAt(i);
+                continue;
+            }
+
+            states.Add(record.state.Clone());
+        }
+
+        states.Reverse();
+        return states;
+    }
+
+    bool WaterStatesEqual(
+    IReadOnlyList<WaterState> first,
+    IReadOnlyList<WaterState> second)
+    {
+        if (first.Count != second.Count)
+            return false;
+
+        for (int i = 0; i < first.Count; i++)
+        {
+            WaterState a = first[i];
+            WaterState b = second[i];
+
+            if (a.center != b.center)
+                return false;
+
+            if (!Mathf.Approximately(a.waterLevel, b.waterLevel))
+            {
+                return false;
+            }
+
+            if (a.contour.Length != b.contour.Length)
+            {
+                return false;
+            }
+
+            for (int j = 0; j < a.contour.Length; j++)
+            {
+                if (a.contour[j] != b.contour[j])
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    void RestoreWaterStates(
+        IReadOnlyList<WaterState> states)
+    {
+        foreach (WaterRecord record in waterHistory)
+        {
+            if (record.water != null)
+                Destroy(record.water.gameObject);
+        }
+
+        waterHistory.Clear();
+
+        foreach (WaterState state in states)
+        {
+            ProceduralWaterMesh water = Instantiate(waterPrefab, state.center, Quaternion.identity);
+
+            water.transform.localScale = Vector3.one;
+            water.BuildFromBoundary(state.center, state.contour, state.waterLevel);
+
+            waterHistory.Add(new WaterRecord(water, state.Clone()));
+        }
     }
 
     void SpawnPhysicsParticles(Vector3 pos, Color color, int count, float size, float lifetime, float force)
@@ -518,6 +611,25 @@ public class GameManager : MonoBehaviour
         if (targetTerrain && targetTerrain.terrainData.terrainLayers.Length > idx)
             return "Слой-" + targetTerrain.terrainData.terrainLayers[idx].name;
         return "Слой " + idx;
+    }
+
+    void CompleteActiveActions()
+    {
+        if (activeTerrainAction != null)
+        {
+            activeTerrainAction.Complete();
+            if (activeTerrainAction.HasChanges)
+                actionHistory.Add(activeTerrainAction);
+            activeTerrainAction = null;
+        }
+
+        if (activePaintAction != null)
+        {
+            activePaintAction.Complete();
+            if (activePaintAction.HasChanges)
+                actionHistory.Add(activePaintAction);
+            activePaintAction = null;
+        }
     }
 
     void CreateUI()
@@ -623,13 +735,6 @@ public class GameManager : MonoBehaviour
         crt.anchoredPosition = new Vector2(0, baseY);
         crt.sizeDelta = new Vector2(-hp * 2, bigH);
         clearWaterButton.onClick.AddListener(ClearAllWater);
-
-        undoWaterButton = CreateButton("UndoLastWaterBtn", uiRoot.transform, "Отменить последнюю воду", Vector2.zero, Vector2.zero);
-        RectTransform ur = undoWaterButton.GetComponent<RectTransform>();
-        ur.anchorMin = new Vector2(0, 0); ur.anchorMax = new Vector2(1, 0); ur.pivot = new Vector2(0.5f, 0);
-        ur.anchoredPosition = new Vector2(0, baseY + bigH + gap);
-        ur.sizeDelta = new Vector2(-hp * 2, bigH);
-        undoWaterButton.onClick.AddListener(UndoLastWater);
     }
 
     Button CreateModeButton(string name, string text, Vector2 pos, Vector2 size)
@@ -741,7 +846,6 @@ public class GameManager : MonoBehaviour
         if (prevLayerButton) prevLayerButton.gameObject.SetActive(paint);
         if (nextLayerButton) nextLayerButton.gameObject.SetActive(paint);
         if (clearWaterButton) clearWaterButton.gameObject.SetActive(water);
-        if (undoWaterButton) undoWaterButton.gameObject.SetActive(water);
 
         if (paint)
         {
