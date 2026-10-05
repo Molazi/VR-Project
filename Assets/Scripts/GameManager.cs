@@ -54,6 +54,7 @@ public class GameManager : MonoBehaviour
     [Header("Laser Visual")]
     public Color laserColor = Color.red;
     public float laserWidth = 0.02f;
+    private const int BrushIndicatorSegments = 48;
 
     // ========== Activation (Grip) ==========
     public InputActionProperty activateAction;
@@ -254,19 +255,71 @@ public class GameManager : MonoBehaviour
     void UpdateLaser(bool pressed)
     {
         if (!laserLine) return;
-        Transform c = GetRightController();
-        if (!c) { laserLine.enabled = false; return; }
-        Vector3 dir = Quaternion.AngleAxis(rayDownAngle, c.right) * c.forward;
-        Ray ray = new Ray(c.position, dir);
+
+        Transform controller = GetRightController();
+
+        if (!controller)
+        {
+            laserLine.enabled = false;
+            return;
+        }
+
+        Vector3 direction = Quaternion.AngleAxis(rayDownAngle, controller.right) * controller.forward;
+        Ray ray = new Ray(controller.position, direction);
+
         int mask = 1 << LayerMask.NameToLayer("Terrain");
         if (mask == 0) mask = -1;
-        if (pressed && Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
+
+        if (!pressed || !Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
         {
-            laserLine.enabled = true;
-            laserLine.SetPosition(0, c.position);
-            laserLine.SetPosition(1, hit.point);
+            laserLine.enabled = false;
+            return;
         }
-        else laserLine.enabled = false;
+
+        if (currentMode == ToolMode.Water)
+        {
+            laserLine.enabled = false;
+            return;
+        }
+
+        DrawBrushIndicator(hit.point);
+    }
+
+    void DrawBrushIndicator(Vector3 center)
+    {
+        Terrain terrain = targetTerrain;
+
+        if (!terrain)
+        {
+            laserLine.enabled = false;
+            return;
+        }
+
+        const int segments = 48;
+        const float heightOffset = 0.08f;
+        const float lineWidth = 2f;
+
+        laserLine.enabled = true;
+        laserLine.useWorldSpace = true;
+        laserLine.loop = true;
+        laserLine.positionCount = segments;
+        laserLine.widthMultiplier = lineWidth;
+
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = i / (float)segments * Mathf.PI * 2f;
+
+            float x = center.x + Mathf.Cos(angle) * brushSize;
+            float z = center.z + Mathf.Sin(angle) * brushSize;
+
+            Vector3 position = new Vector3(x, 0f, z);
+
+            float terrainHeight = terrain.SampleHeight(position) + terrain.transform.position.y;
+
+            position.y = terrainHeight + heightOffset;
+
+            laserLine.SetPosition(i, position);
+        }
     }
 
     Transform GetRightController()
