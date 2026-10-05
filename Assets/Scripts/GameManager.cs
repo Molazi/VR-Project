@@ -199,7 +199,7 @@ public class GameManager : MonoBehaviour
         brushHint.fontMaterial = hintMaterial;
         MeshRenderer hintRenderer = obj.GetComponent<MeshRenderer>();
         hintRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        hintRenderer.receiveShadow = false;
+        hintRenderer.receiveShadows = false;
         hintRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
         hintRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
         obj.SetActive(false);
