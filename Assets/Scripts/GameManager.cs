@@ -103,6 +103,7 @@ public class GameManager : MonoBehaviour
 
     private readonly ActionHistory actionHistory = new();
     private TerrainAction activeTerrainAction;
+    private PaintAction activePaintAction;
 
     void Awake()
     {
@@ -182,15 +183,23 @@ public class GameManager : MonoBehaviour
                         ExecuteAction(controller);
                 }
             }
-            else if (grip &&
-                    Time.time - lastActionTime >= actionInterval)
+            else if (grip && Time.time - lastActionTime >= actionInterval)
             {
                 Transform controller = GetRightController();
 
                 if (controller != null)
                 {
-                    if (activeTerrainAction == null)
-                        activeTerrainAction = new TerrainAction();
+                    if (currentMode == ToolMode.Paint)
+                    {
+                        if (activePaintAction == null)
+                            activePaintAction = new PaintAction();
+                    }
+                    else if (currentMode == ToolMode.Dig ||
+                            currentMode == ToolMode.Raise)
+                    {
+                        if (activeTerrainAction == null)
+                            activeTerrainAction = new TerrainAction();
+                    }
 
                     ExecuteAction(controller);
                     lastActionTime = Time.time;
@@ -206,6 +215,16 @@ public class GameManager : MonoBehaviour
                 actionHistory.Add(activeTerrainAction);
 
             activeTerrainAction = null;
+        }
+
+        if (!grip && activePaintAction != null)
+        {
+            activePaintAction.Complete();
+
+            if (activePaintAction.HasChanges)
+                actionHistory.Add(activePaintAction);
+
+            activePaintAction = null;
         }
 
         if (uiActive && uiRoot != null)
@@ -342,7 +361,7 @@ public class GameManager : MonoBehaviour
                 ApplyDeformTool(worldPos, strength * Time.deltaTime, raiseParticleCount, raiseParticleSize, raiseParticleForce);
                 break;
             case ToolMode.Paint:
-                TerrainDeformer.PaintTexture(targetTerrain, worldPos, brushSize, paintStrength, paintLayer);
+                activePaintAction.Record(targetTerrain, worldPos, brushSize, () => TerrainDeformer.PaintTexture(targetTerrain, worldPos, brushSize, paintStrength, paintLayer));
                 SpawnPhysicsParticles(worldPos, Random.ColorHSV(0f, 1f, 0.7f, 1f, 0.8f, 1f), paintParticleCount, paintParticleSize, 2f, paintParticleForce);
                 break;
             case ToolMode.Water:
