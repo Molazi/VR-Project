@@ -170,7 +170,10 @@ public class GameManager : MonoBehaviour
         laserLine = obj.AddComponent<LineRenderer>();
         laserLine.startWidth = laserWidth;
         laserLine.endWidth = laserWidth;
-        laserLine.material = new Material(Shader.Find("Sprites/Default"));
+        Material laserMaterial = new Material(Shader.Find("Sprites/Default"));
+        laserMaterial.SetInt("_ZTest", 8);
+        laserMaterial.renderQueue = 4000;
+        laserLine.material = laserMaterial;
         laserLine.startColor = laserColor;
         laserLine.endColor = laserColor;
         laserLine.positionCount = 2;
@@ -187,6 +190,8 @@ public class GameManager : MonoBehaviour
         brushHint.color = Color.white;
         brushHint.outlineWidth = 0.15f;
         brushHint.outlineColor = Color.black;
+        brushHint.fontSharedMaterial.SetInt("_ZTest", 8);
+        brushHint.fontSharedMaterial.renderQueue = 4000;
         obj.SetActive(false);
     }
 
@@ -372,7 +377,7 @@ public class GameManager : MonoBehaviour
         }
 
         const int segments = 48;
-        const float heightOffset = 0.08f;
+        const float heightOffset = 0.5f;
         const float lineWidth = 2f;
 
         laserLine.enabled = true;
