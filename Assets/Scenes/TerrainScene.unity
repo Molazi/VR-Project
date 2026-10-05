@@ -1675,8 +1675,9 @@ MonoBehaviour:
   currentMode: 0
   strength: 0.02
   brushSize: 2.5
-  minTerrainHeight: 10
-  maxTerrainHeight: 190
+  smoothingStrength: 1
+  minTerrainHeight: 0
+  maxTerrainHeight: 50
   paintLayer: 0
   paintStrength: 0.5
   actionInterval: 0.05
@@ -1720,6 +1721,30 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: 187161793506945269, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  undoAction:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Undo
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: c3073147-151a-4ddd-a5a8-0d2035c99073
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -5982496924579745919, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  redoAction:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Redo
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 0494eb0e-d07e-465a-b67f-53484ad9edfd
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   grassLayerIndex: 0
   soilLayerIndex: 4
   rockLayerIndex: 7

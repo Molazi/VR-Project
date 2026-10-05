@@ -58,6 +58,8 @@ public class GameManager : MonoBehaviour
     // ========== Activation (Grip) ==========
     public InputActionProperty activateAction;
     public InputActionProperty toggleUIAction;
+    public InputActionProperty undoAction;
+    public InputActionProperty redoAction;
 
     // ========== Высотные слои ==========
     [Header("Высотные слои текстур")]
@@ -98,6 +100,9 @@ public class GameManager : MonoBehaviour
     private Vector2 strengthTextOrigPos, strengthSliderOrigPos;
     private Vector2 paintStrengthTextOrigPos, paintStrengthSliderOrigPos;
     private Vector2 prevLayerOrigPos, nextLayerOrigPos, layerTextOrigPos;
+
+    private readonly ActionHistory actionHistory = new();
+    private TerrainAction activeTerrainAction;
 
     void Awake()
     {
@@ -149,11 +154,19 @@ public class GameManager : MonoBehaviour
 
     void Update()
     {
-        if (toggleUIAction.action != null && toggleUIAction.action.WasPressedThisFrame())
+        if (toggleUIAction.action != null &&
+            toggleUIAction.action.WasPressedThisFrame())
+        {
             ToggleUI();
+        }
 
-        bool grip = activateAction.action != null && activateAction.action.IsPressed();
-        bool just = activateAction.action != null && activateAction.action.WasPressedThisFrame();
+        bool grip =
+            activateAction.action != null &&
+            activateAction.action.IsPressed();
+
+        bool just =
+            activateAction.action != null &&
+            activateAction.action.WasPressedThisFrame();
 
         UpdateLaser(grip);
 
@@ -164,29 +177,62 @@ public class GameManager : MonoBehaviour
                 if (just)
                 {
                     Transform controller = GetRightController();
-                    if (controller != null) ExecuteAction(controller);
+
+                    if (controller != null)
+                        ExecuteAction(controller);
                 }
             }
-            else if (grip && Time.time - lastActionTime >= actionInterval)
+            else if (grip &&
+                    Time.time - lastActionTime >= actionInterval)
             {
                 Transform controller = GetRightController();
+
                 if (controller != null)
                 {
+                    if (activeTerrainAction == null)
+                        activeTerrainAction = new TerrainAction();
+
                     ExecuteAction(controller);
                     lastActionTime = Time.time;
                 }
             }
         }
 
+        if (!grip && activeTerrainAction != null)
+        {
+            activeTerrainAction.Complete();
+
+            if (activeTerrainAction.HasChanges)
+                actionHistory.Add(activeTerrainAction);
+
+            activeTerrainAction = null;
+        }
+
         if (uiActive && uiRoot != null)
         {
-            if (uiDistance != lastUIDistance || uiScale != lastUIScale)
+            if (uiDistance != lastUIDistance ||
+                uiScale != lastUIScale)
             {
-                uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance);
+                uiRoot.transform.localPosition =
+                    new Vector3(0, 0, uiDistance);
+
                 uiRoot.transform.localScale = uiScale;
+
                 lastUIDistance = uiDistance;
                 lastUIScale = uiScale;
             }
+        }
+
+        if (undoAction.action != null &&
+            undoAction.action.WasPressedThisFrame())
+        {
+            actionHistory.Undo();
+        }
+
+        if (redoAction.action != null &&
+            redoAction.action.WasPressedThisFrame())
+        {
+            actionHistory.Redo();
         }
 
         UpdateUI();
@@ -255,10 +301,28 @@ public class GameManager : MonoBehaviour
             if (hit.collider.GetComponent<Terrain>()) PerformAction(hit.point);
     }
 
-    void ApplyDeformTool(Vector3 worldPos, float signedStrength, int particleCount, float particleSize, float particleForce)
+    void ApplyDeformTool(
+    Vector3 worldPos,
+    float signedStrength,
+    int particleCount,
+    float particleSize,
+    float particleForce)
     {
-        DeformTerrain(worldPos, signedStrength);
-        SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), particleCount, particleSize, 1.5f, particleForce);
+        activeTerrainAction.Record(
+            targetTerrain,
+            worldPos,
+            brushSize,
+            () => DeformTerrain(worldPos, signedStrength)
+        );
+
+        SpawnPhysicsParticles(
+            worldPos,
+            new Color(0.77f, 0.64f, 0.52f),
+            particleCount,
+            particleSize,
+            1.5f,
+            particleForce
+        );
     }
 
     void DeformTerrain(Vector3 worldPos, float signedStrength)
