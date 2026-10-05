@@ -103,6 +103,19 @@ public class GameManager : MonoBehaviour
     private LineRenderer laserLine;
     private Transform rightController;
 
+    // ========== Brush Hint (Задача 1: подсказка радиуса/силы над кистью) ==========
+    [Header("Brush Hint")]
+    public bool showBrushHint = true;
+    public float brushHintHeight = 0.35f;
+    public float brushHintFontSize = 2.2f;
+    private TextMeshPro brushHint;
+    private string lastHintText = "";
+    private ToolMode lastHintMode = (ToolMode)(-1);
+    private float lastHintBrush = float.NaN;
+    private float lastHintStrength = float.NaN;
+    private float lastHintPaint = float.NaN;
+    private int lastHintLayer = int.MinValue;
+
     private float[,] originalHeights;
     private float[,,] originalAlphamaps;
     private TerrainData currentTerrainData;
@@ -124,6 +137,7 @@ public class GameManager : MonoBehaviour
         lastUIDistance = uiDistance;
         lastUIScale = uiScale;
         CreateLaser();
+        CreateBrushHint();
     }
 
     void Start()
@@ -161,6 +175,62 @@ public class GameManager : MonoBehaviour
         laserLine.endColor = laserColor;
         laserLine.positionCount = 2;
         laserLine.enabled = false;
+    }
+
+    // Подсказка висит в мире над кольцом кисти, смотрит на камеру.
+    // Текст меняется ТОЛЬКО когда изменилось значение (не каждый кадр).
+    void CreateBrushHint()
+    {
+        GameObject obj = new GameObject("BrushHint");
+        obj.transform.SetParent(transform);
+        brushHint = obj.AddComponent<TextMeshPro>();
+        brushHint.fontSize = brushHintFontSize;
+        brushHint.alignment = TextAlignmentOptions.Center;
+        brushHint.color = Color.white;
+        brushHint.outlineWidth = 0.15f;
+        brushHint.outlineColor = Color.black;
+        obj.SetActive(false);
+    }
+
+    void UpdateBrushHint(Vector3 brushCenter, bool brushVisible)
+    {
+        if (!brushHint) return;
+
+        // В режиме воды кисти-кольца нет (вода спавнится в точке) — подсказку прячем.
+        bool show = showBrushHint && brushVisible && currentMode != ToolMode.Water;
+        brushHint.gameObject.SetActive(show);
+        if (!show) return;
+
+        bool changed =
+            currentMode != lastHintMode ||
+            !Mathf.Approximately(brushSize, lastHintBrush) ||
+            !Mathf.Approximately(strength, lastHintStrength) ||
+            !Mathf.Approximately(paintStrength, lastHintPaint) ||
+            paintLayer != lastHintLayer;
+
+        // Позиция + разворот к камере обновляются каждый кадр (дешево),
+        // а текст — только при изменении значений.
+        brushHint.transform.position = brushCenter + Vector3.up * brushHintHeight;
+        Camera cam = Camera.main;
+        if (cam) brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
+
+        if (!changed && lastHintText != "") return;
+
+        string text = currentMode switch
+        {
+            ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
+            ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
+            ToolMode.Paint => $"Краска  •  Кисть {brushSize:F1} м  •  {paintStrength:F2}  •  {GetLayerName(paintLayer)}",
+            _ => ""
+        };
+
+        brushHint.text = text;
+        lastHintText = text;
+        lastHintMode = currentMode;
+        lastHintBrush = brushSize;
+        lastHintStrength = strength;
+        lastHintPaint = paintStrength;
+        lastHintLayer = paintLayer;
     }
 
     void Update()
@@ -273,12 +343,14 @@ public class GameManager : MonoBehaviour
         if (!pressed || !Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
         {
             laserLine.enabled = false;
+            UpdateBrushHint(Vector3.zero, false);
             return;
         }
 
         if (currentMode == ToolMode.Water)
         {
             laserLine.enabled = false;
+            UpdateBrushHint(Vector3.zero, false);
             return;
         }
 
@@ -320,6 +392,8 @@ public class GameManager : MonoBehaviour
 
             laserLine.SetPosition(i, position);
         }
+
+        UpdateBrushHint(center, true);
     }
 
     Transform GetRightController()
