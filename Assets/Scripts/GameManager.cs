@@ -105,8 +105,9 @@ public class GameManager : MonoBehaviour
 
     [Header("Brush Hint")]
     public bool showBrushHint = true;
-    public float brushHintHeight = 0.35f;
+    public float brushHintHeight = 1.2f;
     public float brushHintFontSize = 2.2f;
+    public float brushHintMinAboveTerrain = 0.6f;
     private TextMeshPro brushHint;
     private string lastHintText = "";
     private ToolMode lastHintMode = (ToolMode)(-1);
@@ -204,7 +205,7 @@ public class GameManager : MonoBehaviour
             !Mathf.Approximately(paintStrength, lastHintPaint) ||
             paintLayer != lastHintLayer;
 
-        brushHint.transform.position = brushCenter + Vector3.up * brushHintHeight;
+        brushHint.transform.position = GetBrushHintPosition(brushCenter);
         Camera cam = Camera.main;
         if (cam) brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
 
@@ -225,6 +226,15 @@ public class GameManager : MonoBehaviour
         lastHintStrength = strength;
         lastHintPaint = paintStrength;
         lastHintLayer = paintLayer;
+    }
+
+    Vector3 GetBrushHintPosition(Vector3 brushCenter)
+    {
+        float groundY = brushCenter.y;
+        if (targetTerrain != null)
+            groundY = targetTerrain.SampleHeight(brushCenter) + targetTerrain.transform.position.y;
+        float hintY = Mathf.Max(brushCenter.y + brushHintHeight, groundY + brushHintMinAboveTerrain);
+        return new Vector3(brushCenter.x, hintY, brushCenter.z);
     }
 
     void Update()
