@@ -190,8 +190,18 @@ public class GameManager : MonoBehaviour
         brushHint.color = Color.white;
         brushHint.outlineWidth = 0.15f;
         brushHint.outlineColor = Color.black;
-        brushHint.fontSharedMaterial.SetInt("_ZTest", 8);
-        brushHint.fontSharedMaterial.renderQueue = 4000;
+        Material hintMaterial = new Material(brushHint.fontSharedMaterial);
+        hintMaterial.SetInt("_ZTest", 8);
+        hintMaterial.SetInt("_ZTestMode", 8);
+        hintMaterial.SetInt("unity_GUIZTestMode", 8);
+        hintMaterial.renderQueue = 4000;
+        hintMaterial.DisableKeyword("UNDERLAY_ON");
+        brushHint.fontMaterial = hintMaterial;
+        MeshRenderer hintRenderer = obj.GetComponent<MeshRenderer>();
+        hintRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        hintRenderer.receiveShadow = false;
+        hintRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+        hintRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
         obj.SetActive(false);
     }
 
