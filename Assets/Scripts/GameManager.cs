@@ -103,7 +103,6 @@ public class GameManager : MonoBehaviour
     private LineRenderer laserLine;
     private Transform rightController;
 
-    // ========== Brush Hint (Задача 1: подсказка радиуса/силы над кистью) ==========
     [Header("Brush Hint")]
     public bool showBrushHint = true;
     public float brushHintHeight = 0.35f;
@@ -177,8 +176,6 @@ public class GameManager : MonoBehaviour
         laserLine.enabled = false;
     }
 
-    // Подсказка висит в мире над кольцом кисти, смотрит на камеру.
-    // Текст меняется ТОЛЬКО когда изменилось значение (не каждый кадр).
     void CreateBrushHint()
     {
         GameObject obj = new GameObject("BrushHint");
@@ -196,7 +193,6 @@ public class GameManager : MonoBehaviour
     {
         if (!brushHint) return;
 
-        // В режиме воды кисти-кольца нет (вода спавнится в точке) — подсказку прячем.
         bool show = showBrushHint && brushVisible && currentMode != ToolMode.Water;
         brushHint.gameObject.SetActive(show);
         if (!show) return;
@@ -208,8 +204,6 @@ public class GameManager : MonoBehaviour
             !Mathf.Approximately(paintStrength, lastHintPaint) ||
             paintLayer != lastHintLayer;
 
-        // Позиция + разворот к камере обновляются каждый кадр (дешево),
-        // а текст — только при изменении значений.
         brushHint.transform.position = brushCenter + Vector3.up * brushHintHeight;
         Camera cam = Camera.main;
         if (cam) brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
