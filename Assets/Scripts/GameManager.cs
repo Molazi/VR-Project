@@ -103,6 +103,20 @@ public class GameManager : MonoBehaviour
     private LineRenderer laserLine;
     private Transform rightController;
 
+    [Header("Brush Hint")]
+    public bool showBrushHint = true;
+    public float brushHintHeight = 0.15f;
+    public float brushHintFontSize = 0.15f;
+    public float brushHintMinAboveTerrain = 0.6f;
+    public Vector3 brushHintControllerOffset = new Vector3(0f, 0.06f, 0f);
+    private TextMeshPro brushHint;
+    private string lastHintText = "";
+    private ToolMode lastHintMode = (ToolMode)(-1);
+    private float lastHintBrush = float.NaN;
+    private float lastHintStrength = float.NaN;
+    private float lastHintPaint = float.NaN;
+    private int lastHintLayer = int.MinValue;
+
     private float[,] originalHeights;
     private float[,,] originalAlphamaps;
     private TerrainData currentTerrainData;
@@ -124,6 +138,7 @@ public class GameManager : MonoBehaviour
         lastUIDistance = uiDistance;
         lastUIScale = uiScale;
         CreateLaser();
+        CreateBrushHint();
     }
 
     void Start()
@@ -156,11 +171,133 @@ public class GameManager : MonoBehaviour
         laserLine = obj.AddComponent<LineRenderer>();
         laserLine.startWidth = laserWidth;
         laserLine.endWidth = laserWidth;
-        laserLine.material = new Material(Shader.Find("Sprites/Default"));
+        Material laserMaterial = new Material(Shader.Find("Sprites/Default"));
+        laserMaterial.SetInt("_ZTest", 8);
+        laserMaterial.renderQueue = 4000;
+        laserLine.material = laserMaterial;
         laserLine.startColor = laserColor;
         laserLine.endColor = laserColor;
         laserLine.positionCount = 2;
         laserLine.enabled = false;
+    }
+
+    void CreateBrushHint()
+    {
+        GameObject obj = new GameObject("BrushHint");
+        obj.transform.SetParent(transform);
+        brushHint = obj.AddComponent<TextMeshPro>();
+        brushHint.fontSize = brushHintFontSize;
+        brushHint.rectTransform.sizeDelta = new Vector2(1.2f, 0.25f);
+        brushHint.alignment = TextAlignmentOptions.Center;
+        brushHint.color = Color.white;
+        brushHint.outlineWidth = 0.15f;
+        brushHint.outlineColor = Color.black;
+        Material hintMaterial = new Material(brushHint.fontSharedMaterial);
+        hintMaterial.SetInt("_ZTest", 8);
+        hintMaterial.SetInt("_ZTestMode", 8);
+        hintMaterial.SetInt("unity_GUIZTestMode", 8);
+        hintMaterial.renderQueue = 4000;
+        hintMaterial.DisableKeyword("UNDERLAY_ON");
+        brushHint.fontMaterial = hintMaterial;
+        MeshRenderer hintRenderer = obj.GetComponent<MeshRenderer>();
+        hintRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        hintRenderer.receiveShadows = false;
+        hintRenderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+        hintRenderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        obj.SetActive(false);
+    }
+
+    void UpdateBrushHint(Vector3 brushCenter, bool brushVisible)
+    {
+        if (!brushHint) return;
+
+        bool show = showBrushHint && currentMode != ToolMode.Water;
+        brushHint.gameObject.SetActive(show);
+        if (!show) return;
+
+        bool changed =
+            currentMode != lastHintMode ||
+            !Mathf.Approximately(brushSize, lastHintBrush) ||
+            !Mathf.Approximately(strength, lastHintStrength) ||
+            !Mathf.Approximately(paintStrength, lastHintPaint) ||
+            paintLayer != lastHintLayer;
+
+        Transform leftController = FindLeftController();
+        if (leftController != null)
+        {
+            brushHint.transform.position = leftController.position + brushHintControllerOffset;
+            brushHint.transform.rotation = leftController.rotation;
+        }
+        else if (Camera.main != null)
+        {
+            Camera cam = Camera.main;
+            brushHint.transform.position = cam.transform.position + cam.transform.forward * 1.2f + cam.transform.up * -0.3f;
+            brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
+        }
+        else
+        {
+            brushHint.transform.position = GetBrushHintPosition(brushCenter);
+        }
+
+        if (!changed && lastHintText != "") return;
+
+        string text = currentMode switch
+        {
+            ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
+            ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
+            ToolMode.Paint => $"Краска  •  Кисть {brushSize:F1} м  •  {paintStrength:F2}  •  {GetLayerName(paintLayer)}",
+            _ => ""
+        };
+
+        brushHint.text = text;
+        lastHintText = text;
+        lastHintMode = currentMode;
+        lastHintBrush = brushSize;
+        lastHintStrength = strength;
+        lastHintPaint = paintStrength;
+        lastHintLayer = paintLayer;
+    }
+
+    private Transform cachedLeftController;
+    private float leftControllerSearchTime;
+    Transform FindLeftController()
+    {
+        if (cachedLeftController != null) return cachedLeftController;
+        if (Time.time - leftControllerSearchTime < 1f) return null;
+        leftControllerSearchTime = Time.time;
+        string[] candidates = new string[] { "Left Controller", "LeftController", "Left Hand Controller", "LeftHand Controller" };
+        foreach (string name in candidates)
+        {
+            GameObject found = GameObject.Find(name);
+            if (found != null)
+            {
+                cachedLeftController = found.transform;
+                return cachedLeftController;
+            }
+        }
+        UnityEngine.XR.InputDevice leftHand = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.LeftHand);
+        if (leftHand.isValid)
+        {
+            GameObject rig = GameObject.Find("XR Origin");
+            if (rig == null) rig = GameObject.Find("XROrigin");
+            if (rig == null) rig = GameObject.Find("XR Rig");
+            if (rig != null)
+            {
+                Transform t = rig.transform.Find("Camera Offset/Left Controller");
+                if (t == null) t = rig.transform.Find("Camera Offset/LeftHand Controller");
+                if (t != null) cachedLeftController = t;
+            }
+        }
+        return cachedLeftController;
+    }
+
+    Vector3 GetBrushHintPosition(Vector3 brushCenter)
+    {
+        float groundY = brushCenter.y;
+        if (targetTerrain != null)
+            groundY = targetTerrain.SampleHeight(brushCenter) + targetTerrain.transform.position.y;
+        float hintY = Mathf.Max(brushCenter.y + brushHintHeight, groundY + brushHintMinAboveTerrain);
+        return new Vector3(brushCenter.x, hintY, brushCenter.z);
     }
 
     void Update()
@@ -273,12 +410,14 @@ public class GameManager : MonoBehaviour
         if (!pressed || !Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
         {
             laserLine.enabled = false;
+            UpdateBrushHint(Vector3.zero, false);
             return;
         }
 
         if (currentMode == ToolMode.Water)
         {
             laserLine.enabled = false;
+            UpdateBrushHint(Vector3.zero, false);
             return;
         }
 
@@ -296,7 +435,7 @@ public class GameManager : MonoBehaviour
         }
 
         const int segments = 48;
-        const float heightOffset = 0.08f;
+        const float heightOffset = 0.5f;
         const float lineWidth = 2f;
 
         laserLine.enabled = true;
@@ -320,6 +459,8 @@ public class GameManager : MonoBehaviour
 
             laserLine.SetPosition(i, position);
         }
+
+        UpdateBrushHint(center, true);
     }
 
     Transform GetRightController()
