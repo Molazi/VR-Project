@@ -61,6 +61,18 @@ public class GameManager : MonoBehaviour
     public InputActionProperty toggleUIAction;
     public InputActionProperty undoAction;
     public InputActionProperty redoAction;
+    public InputActionProperty brushBiggerAction;
+    public InputActionProperty brushSmallerAction;
+    public InputActionProperty strengthUpAction;
+    public InputActionProperty strengthDownAction;
+    public float brushButtonStep = 0.5f;
+    public float strengthButtonStep = 0.1f;
+    public float brushButtonHoldDelay = 0.35f;
+    public float brushButtonHoldRate = 0.12f;
+    private float brushBiggerNextTime;
+    private float brushSmallerNextTime;
+    private float strengthUpNextTime;
+    private float strengthDownNextTime;
 
     // ========== Высотные слои ==========
     [Header("Высотные слои текстур")]
@@ -225,17 +237,20 @@ public class GameManager : MonoBehaviour
         Transform leftController = FindLeftController();
         if (leftController != null)
         {
-            brushHint.transform.position = leftController.position + brushHintControllerOffset;
-            brushHint.transform.rotation = leftController.rotation;
+            brushHint.transform.SetParent(leftController, false);
+            brushHint.transform.localPosition = brushHintControllerOffset;
+            brushHint.transform.localRotation = Quaternion.identity;
         }
         else if (Camera.main != null)
         {
+            brushHint.transform.SetParent(null);
             Camera cam = Camera.main;
             brushHint.transform.position = cam.transform.position + cam.transform.forward * 1.2f + cam.transform.up * -0.3f;
             brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
         }
         else
         {
+            brushHint.transform.SetParent(transform);
             brushHint.transform.position = GetBrushHintPosition(brushCenter);
         }
 
@@ -318,6 +333,8 @@ public class GameManager : MonoBehaviour
 
         UpdateLaser(grip);
 
+        HandleBrushButtons();
+
         if (!uiActive)
         {
             if (currentMode == ToolMode.Water)
@@ -389,6 +406,54 @@ public class GameManager : MonoBehaviour
         UpdateUI();
     }
 
+    void HandleBrushButtons()
+    {
+        if (ApplyBrushButton(brushBiggerAction, ref brushBiggerNextTime))
+            ChangeBrushSize(brushButtonStep);
+        if (ApplyBrushButton(brushSmallerAction, ref brushSmallerNextTime))
+            ChangeBrushSize(-brushButtonStep);
+        if (ApplyBrushButton(strengthUpAction, ref strengthUpNextTime))
+            ChangeStrength(strengthButtonStep);
+        if (ApplyBrushButton(strengthDownAction, ref strengthDownNextTime))
+            ChangeStrength(-strengthButtonStep);
+    }
+
+    bool ApplyBrushButton(InputActionProperty property, ref float nextTime)
+    {
+        if (property.action == null) return false;
+        if (property.action.WasPressedThisFrame())
+        {
+            nextTime = Time.time + brushButtonHoldDelay;
+            return true;
+        }
+        if (property.action.IsPressed() && Time.time >= nextTime)
+        {
+            nextTime = Time.time + brushButtonHoldRate;
+            return true;
+        }
+        return false;
+    }
+
+    void ChangeBrushSize(float delta)
+    {
+        brushSize = Mathf.Clamp(brushSize + delta, 0.1f, 10f);
+        if (brushSizeSlider) brushSizeSlider.SetValueWithoutNotify(brushSize);
+    }
+
+    void ChangeStrength(float delta)
+    {
+        if (currentMode == ToolMode.Paint)
+        {
+            paintStrength = Mathf.Clamp(paintStrength + delta, 0f, 2f);
+            if (paintStrengthSlider) paintStrengthSlider.SetValueWithoutNotify(paintStrength);
+        }
+        else
+        {
+            strength = Mathf.Clamp(strength + delta, 0.001f, 3f);
+            if (strengthSlider) strengthSlider.SetValueWithoutNotify(strength);
+        }
+    }
+
     void UpdateLaser(bool pressed)
     {
         if (!laserLine) return;
@@ -407,7 +472,7 @@ public class GameManager : MonoBehaviour
         int mask = 1 << LayerMask.NameToLayer("Terrain");
         if (mask == 0) mask = -1;
 
-        if (!pressed || !Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
+        if (!Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
         {
             laserLine.enabled = false;
             UpdateBrushHint(Vector3.zero, false);
