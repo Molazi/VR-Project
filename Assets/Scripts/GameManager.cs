@@ -106,7 +106,7 @@ public class GameManager : MonoBehaviour
     [Header("Brush Hint")]
     public bool showBrushHint = true;
     public float brushHintHeight = 0.15f;
-    public float brushHintFontSize = 0.44f;
+    public float brushHintFontSize = 0.15f;
     public float brushHintMinAboveTerrain = 0.6f;
     public Vector3 brushHintControllerOffset = new Vector3(0f, 0.06f, 0f);
     private TextMeshPro brushHint;
