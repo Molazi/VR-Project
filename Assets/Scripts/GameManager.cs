@@ -106,9 +106,9 @@ public class GameManager : MonoBehaviour
     [Header("Brush Hint")]
     public bool showBrushHint = true;
     public float brushHintHeight = 0.15f;
-    public float brushHintFontSize = 2.2f;
+    public float brushHintFontSize = 0.44f;
     public float brushHintMinAboveTerrain = 0.6f;
-    public Vector3 brushHintControllerOffset = new Vector3(0f, 0.15f, 0f);
+    public Vector3 brushHintControllerOffset = new Vector3(0f, 0.06f, 0f);
     private TextMeshPro brushHint;
     private string lastHintText = "";
     private ToolMode lastHintMode = (ToolMode)(-1);
@@ -187,6 +187,7 @@ public class GameManager : MonoBehaviour
         obj.transform.SetParent(transform);
         brushHint = obj.AddComponent<TextMeshPro>();
         brushHint.fontSize = brushHintFontSize;
+        brushHint.rectTransform.sizeDelta = new Vector2(1.2f, 0.25f);
         brushHint.alignment = TextAlignmentOptions.Center;
         brushHint.color = Color.white;
         brushHint.outlineWidth = 0.15f;
