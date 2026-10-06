@@ -105,9 +105,10 @@ public class GameManager : MonoBehaviour
 
     [Header("Brush Hint")]
     public bool showBrushHint = true;
-    public float brushHintHeight = 1.2f;
+    public float brushHintHeight = 0.15f;
     public float brushHintFontSize = 2.2f;
     public float brushHintMinAboveTerrain = 0.6f;
+    public Vector3 brushHintControllerOffset = new Vector3(0f, 0.15f, 0f);
     private TextMeshPro brushHint;
     private string lastHintText = "";
     private ToolMode lastHintMode = (ToolMode)(-1);
@@ -209,7 +210,7 @@ public class GameManager : MonoBehaviour
     {
         if (!brushHint) return;
 
-        bool show = showBrushHint && brushVisible && currentMode != ToolMode.Water;
+        bool show = showBrushHint && currentMode != ToolMode.Water;
         brushHint.gameObject.SetActive(show);
         if (!show) return;
 
@@ -220,9 +221,22 @@ public class GameManager : MonoBehaviour
             !Mathf.Approximately(paintStrength, lastHintPaint) ||
             paintLayer != lastHintLayer;
 
-        brushHint.transform.position = GetBrushHintPosition(brushCenter);
-        Camera cam = Camera.main;
-        if (cam) brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
+        Transform leftController = FindLeftController();
+        if (leftController != null)
+        {
+            brushHint.transform.position = leftController.position + brushHintControllerOffset;
+            brushHint.transform.rotation = leftController.rotation;
+        }
+        else if (Camera.main != null)
+        {
+            Camera cam = Camera.main;
+            brushHint.transform.position = cam.transform.position + cam.transform.forward * 1.2f + cam.transform.up * -0.3f;
+            brushHint.transform.rotation = Quaternion.LookRotation(brushHint.transform.position - cam.transform.position);
+        }
+        else
+        {
+            brushHint.transform.position = GetBrushHintPosition(brushCenter);
+        }
 
         if (!changed && lastHintText != "") return;
 
@@ -241,6 +255,39 @@ public class GameManager : MonoBehaviour
         lastHintStrength = strength;
         lastHintPaint = paintStrength;
         lastHintLayer = paintLayer;
+    }
+
+    private Transform cachedLeftController;
+    private float leftControllerSearchTime;
+    Transform FindLeftController()
+    {
+        if (cachedLeftController != null) return cachedLeftController;
+        if (Time.time - leftControllerSearchTime < 1f) return null;
+        leftControllerSearchTime = Time.time;
+        string[] candidates = new string[] { "Left Controller", "LeftController", "Left Hand Controller", "LeftHand Controller" };
+        foreach (string name in candidates)
+        {
+            GameObject found = GameObject.Find(name);
+            if (found != null)
+            {
+                cachedLeftController = found.transform;
+                return cachedLeftController;
+            }
+        }
+        UnityEngine.XR.InputDevice leftHand = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.LeftHand);
+        if (leftHand.isValid)
+        {
+            GameObject rig = GameObject.Find("XR Origin");
+            if (rig == null) rig = GameObject.Find("XROrigin");
+            if (rig == null) rig = GameObject.Find("XR Rig");
+            if (rig != null)
+            {
+                Transform t = rig.transform.Find("Camera Offset/Left Controller");
+                if (t == null) t = rig.transform.Find("Camera Offset/LeftHand Controller");
+                if (t != null) cachedLeftController = t;
+            }
+        }
+        return cachedLeftController;
     }
 
     Vector3 GetBrushHintPosition(Vector3 brushCenter)
