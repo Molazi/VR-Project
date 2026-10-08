@@ -53,6 +53,9 @@ public class GameManager : MonoBehaviour
     public float rayDownAngle = 20f;
     [Header("Laser Visual")]
     public Color laserColor = Color.red;
+    public Color digRingColor = new Color(1f, 0.45f, 0f);
+    public Color raiseRingColor = new Color(0.15f, 1f, 0.3f);
+    public Color paintRingColor = new Color(0.7f, 0.3f, 1f);
     public float laserWidth = 0.02f;
     private const int BrushIndicatorSegments = 48;
 
@@ -94,6 +97,7 @@ public class GameManager : MonoBehaviour
     private Button undoButton, redoButton;
     private TMP_Text waterRadiusText;
     private Slider waterRadiusSlider;
+    private ToolMode lastHighlightMode = (ToolMode)(-1);
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
     private Button clearWaterButton;
@@ -511,6 +515,16 @@ public class GameManager : MonoBehaviour
         laserLine.loop = true;
         laserLine.positionCount = segments;
         laserLine.widthMultiplier = lineWidth;
+
+        Color ringColor = currentMode switch
+        {
+            ToolMode.Dig => digRingColor,
+            ToolMode.Raise => raiseRingColor,
+            ToolMode.Paint => paintRingColor,
+            _ => laserColor
+        };
+        laserLine.startColor = ringColor;
+        laserLine.endColor = ringColor;
 
         for (int i = 0; i < segments; i++)
         {
@@ -1032,6 +1046,13 @@ public class GameManager : MonoBehaviour
         return btn;
     }
 
+    void SetModeButtonColor(Button btn, bool active, Color activeColor, Color baseColor)
+    {
+        if (!btn) return;
+        Image img = btn.GetComponent<Image>();
+        if (img) img.color = active ? activeColor : baseColor;
+    }
+
     void AssignLayerRecursively(GameObject obj, int layer)
     {
         obj.layer = layer;
@@ -1116,6 +1137,16 @@ public class GameManager : MonoBehaviour
     {
         string modeStr = currentMode switch { ToolMode.Dig => "Копание", ToolMode.Raise => "Насыпь", ToolMode.Paint => "Краска", ToolMode.Water => "Вода", _ => "" };
         if (modeText) modeText.text = $"Режим: {modeStr}";
+
+        if (currentMode != lastHighlightMode)
+        {
+            Color baseColor = uiStyle?.buttonColor ?? new Color(0.3f, 0.3f, 0.3f, 0.8f);
+            SetModeButtonColor(digButton, currentMode == ToolMode.Dig, digRingColor, baseColor);
+            SetModeButtonColor(raiseButton, currentMode == ToolMode.Raise, raiseRingColor, baseColor);
+            SetModeButtonColor(paintButton, currentMode == ToolMode.Paint, paintRingColor, baseColor);
+            SetModeButtonColor(waterButton, currentMode == ToolMode.Water, new Color(0.2f, 0.6f, 1f), baseColor);
+            lastHighlightMode = currentMode;
+        }
 
         bool digRaise = currentMode is ToolMode.Dig or ToolMode.Raise;
         bool paint = currentMode == ToolMode.Paint;
