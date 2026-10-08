@@ -1027,6 +1027,63 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1506005242}
   m_SourcePrefab: {fileID: 100100000, guid: 8a5744661f191ee4c968bf709f302dc7, type: 3}
+--- !u!1001 &663493494
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 102.2507
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 95.10175
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187027, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187037, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
+      propertyPath: m_Name
+      value: XR Device Simulator
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 18ddb545287c546e19cc77dc9fbb2189, type: 3}
 --- !u!1001 &797621991
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1745,6 +1802,58 @@ MonoBehaviour:
       m_SingletonActionBindings: []
       m_Flags: 0
     m_Reference: {fileID: -6131295136447488360, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  brushBiggerAction:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Brush Bigger
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 46ad74e9-501f-443c-aaa7-7b85e4137da4
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -3084708042830593562, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  brushSmallerAction:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Brush Smaller
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 27a84b51-6232-47fe-ae2b-38a4bf5c62b4
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -4968628850431233147, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  strengthUpAction:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Strength Up
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 17c306d1-50dd-4758-9c43-873a5ab75159
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: -3043362424065806820, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  strengthDownAction:
+    m_UseReference: 1
+    m_Action:
+      m_Name: Strength Down
+      m_Type: 0
+      m_ExpectedControlType: 
+      m_Id: 00ddb72e-9348-49aa-afc4-5928b4ec7677
+      m_Processors: 
+      m_Interactions: 
+      m_SingletonActionBindings: []
+      m_Flags: 0
+    m_Reference: {fileID: 6640337397691947878, guid: c348712bda248c246b8c49b3db54643f, type: 3}
+  brushButtonStep: 0.5
+  strengthButtonStep: 0.1
+  brushButtonHoldDelay: 0.35
+  brushButtonHoldRate: 0.12
   grassLayerIndex: 0
   soilLayerIndex: 4
   rockLayerIndex: 7
@@ -1752,6 +1861,11 @@ MonoBehaviour:
   soilHeight: 500
   uiDistance: 2.2
   uiScale: {x: 0.0025, y: 0.0025, z: 0.0025}
+  showBrushHint: 1
+  brushHintHeight: 0.15
+  brushHintFontSize: 0.15
+  brushHintMinAboveTerrain: 0.6
+  brushHintControllerOffset: {x: 0, y: 0.06, z: 0}
 --- !u!1 &1305649876 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1767192433, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
@@ -7027,3 +7141,4 @@ SceneRoots:
   - {fileID: 1152176186}
   - {fileID: 1535284414}
   - {fileID: 1880954139}
+  - {fileID: 663493494}
