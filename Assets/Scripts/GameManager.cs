@@ -91,6 +91,9 @@ public class GameManager : MonoBehaviour
     private TMP_Text paintLayerText;
     private TMP_Text paintStrengthText;
     private Button digButton, raiseButton, paintButton, waterButton;
+    private Button undoButton, redoButton;
+    private TMP_Text waterRadiusText;
+    private Slider waterRadiusSlider;
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
     private Button clearWaterButton;
@@ -994,6 +997,29 @@ public class GameManager : MonoBehaviour
         crt.anchoredPosition = new Vector2(0, baseY);
         crt.sizeDelta = new Vector2(-hp * 2, bigH);
         clearWaterButton.onClick.AddListener(ClearAllWater);
+
+        undoButton = CreateButton("UndoBtn", uiRoot.transform, "Отменить", Vector2.zero, Vector2.zero);
+        RectTransform ur = undoButton.GetComponent<RectTransform>();
+        ur.anchorMin = ur.anchorMax = new Vector2(1, 1); ur.pivot = new Vector2(1, 1);
+        ur.anchoredPosition = new Vector2(-30, -15); ur.sizeDelta = new Vector2(150, 45);
+        undoButton.onClick.AddListener(() => actionHistory.Undo());
+
+        redoButton = CreateButton("RedoBtn", uiRoot.transform, "Вернуть", Vector2.zero, Vector2.zero);
+        RectTransform rr = redoButton.GetComponent<RectTransform>();
+        rr.anchorMin = rr.anchorMax = new Vector2(1, 1); rr.pivot = new Vector2(1, 1);
+        rr.anchoredPosition = new Vector2(-195, -15); rr.sizeDelta = new Vector2(150, 45);
+        redoButton.onClick.AddListener(() => actionHistory.Redo());
+
+        waterRadiusText = CreateText("WaterRadiusLabel", uiRoot.transform, "Радиус воды: 15", 20, TextAlignmentOptions.Left);
+        waterRadiusText.rectTransform.anchorMin = new Vector2(0, 1); waterRadiusText.rectTransform.anchorMax = new Vector2(0, 1);
+        waterRadiusText.rectTransform.pivot = new Vector2(0, 1);
+        waterRadiusText.rectTransform.anchoredPosition = strengthTextOrigPos;
+        waterRadiusText.rectTransform.sizeDelta = new Vector2(300, lh);
+        waterRadiusText.gameObject.SetActive(false);
+
+        waterRadiusSlider = CreateSlider("WaterRadiusSlider", uiRoot.transform, strengthSliderOrigPos, new Vector2(sw, sh), 1f, 20f, waterMaxRadius);
+        waterRadiusSlider.onValueChanged.AddListener(v => waterMaxRadius = v);
+        waterRadiusSlider.gameObject.SetActive(false);
     }
 
     Button CreateModeButton(string name, string text, Vector2 pos, Vector2 size)
@@ -1105,6 +1131,21 @@ public class GameManager : MonoBehaviour
         if (prevLayerButton) prevLayerButton.gameObject.SetActive(paint);
         if (nextLayerButton) nextLayerButton.gameObject.SetActive(paint);
         if (clearWaterButton) clearWaterButton.gameObject.SetActive(water);
+        if (waterRadiusText) waterRadiusText.gameObject.SetActive(water);
+        if (waterRadiusSlider) waterRadiusSlider.gameObject.SetActive(water);
+
+        Color btnBase = uiStyle?.buttonColor ?? new Color(0.3f, 0.3f, 0.3f, 0.8f);
+        Color btnDim = new Color(0.25f, 0.25f, 0.25f, 0.35f);
+        if (undoButton)
+        {
+            undoButton.GetComponent<Image>().color = actionHistory.CanUndo ? btnBase : btnDim;
+            undoButton.interactable = actionHistory.CanUndo;
+        }
+        if (redoButton)
+        {
+            redoButton.GetComponent<Image>().color = actionHistory.CanRedo ? btnBase : btnDim;
+            redoButton.interactable = actionHistory.CanRedo;
+        }
 
         if (paint)
         {
@@ -1128,6 +1169,7 @@ public class GameManager : MonoBehaviour
         if (strengthText && digRaise) strengthText.text = $"Сила: {strength:F3}";
         if (paintStrengthText && paint) paintStrengthText.text = $"Краска: {paintStrength:F2}";
         if (paintLayerText && paint) paintLayerText.text = GetLayerName(paintLayer);
+        if (waterRadiusText && water) waterRadiusText.text = $"Радиус воды: {waterMaxRadius:F0}";
     }
 
     void PrevPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer - 1 + cnt) % cnt; }
