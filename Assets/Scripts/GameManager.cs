@@ -14,7 +14,6 @@ public class GameManager : MonoBehaviour
     public float waterMaxRadius = 5f;
     public float waterDepthThreshold = 0.05f;
     public int waterBoundaryRays = 128;
-    public float waterCleanupRadius = 5f;
 
     // ========== Tools ==========
     public UIStyleConfig uiStyle;
@@ -705,31 +704,114 @@ public class GameManager : MonoBehaviour
 
         if (contour.Count < 3) return;
         Vector3 center = new Vector3(clickPoint.x, waterLevel, clickPoint.z);
-        RemoveOldWater(center, waterCleanupRadius);
+        Vector3[] contourPoints = contour.ToArray();
+        RemoveOverlappingWater(contourPoints);
         ProceduralWaterMesh water = Instantiate(waterPrefab, center, Quaternion.identity);
         water.transform.localScale = Vector3.one;
-        Vector3[] contourPoints = contour.ToArray();
         water.BuildFromBoundary(center, contourPoints, waterLevel);
         WaterState state = new WaterState(center, contourPoints, waterLevel);
         waterHistory.Add(new WaterRecord(water, state));
     }
 
-    void RemoveOldWater(Vector3 pos, float radius)
+    void RemoveOverlappingWater(Vector3[] newContour)
     {
         for (int i = waterHistory.Count - 1; i >= 0; i--)
         {
             WaterRecord record = waterHistory[i];
+
             if (record.water == null)
             {
                 waterHistory.RemoveAt(i);
                 continue;
             }
-            if (Vector3.Distance(pos, record.water.transform.position) <= radius)
+
+            if (record.state == null || !WaterContoursOverlap(record.state.contour, newContour))
             {
-                Destroy(record.water.gameObject);
-                waterHistory.RemoveAt(i);
+                continue;
+            }
+
+            Destroy(record.water.gameObject);
+            waterHistory.RemoveAt(i);
+        }
+    }
+
+    static bool WaterContoursOverlap(Vector3[] first, Vector3[] second)
+    {
+        if (first == null || second == null || first.Length < 3 || second.Length < 3)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < first.Length; i++)
+        {
+            Vector3 a = first[i];
+            Vector3 b = first[(i + 1) % first.Length];
+
+            for (int j = 0; j < second.Length; j++)
+            {
+                Vector3 c = second[j];
+                Vector3 d = second[(j + 1) % second.Length];
+
+                if (SegmentsIntersectXZ(a, b, c, d))
+                    return true;
             }
         }
+
+        return IsPointInsideContour(first[0], second) || IsPointInsideContour(second[0], first);
+    }
+
+    static bool SegmentsIntersectXZ(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+    {
+        const float epsilon = 0.0001f;
+
+        float abC = CrossXZ(a, b, c);
+        float abD = CrossXZ(a, b, d);
+        float cdA = CrossXZ(c, d, a);
+        float cdB = CrossXZ(c, d, b);
+
+        bool crossesAB = (abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon);
+        bool crossesCD = (cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon);
+
+        if (crossesAB && crossesCD)
+            return true;
+
+        return (Mathf.Abs(abC) <= epsilon && OnSegmentXZ(a, b, c, epsilon)) ||
+            (Mathf.Abs(abD) <= epsilon && OnSegmentXZ(a, b, d, epsilon)) ||
+            (Mathf.Abs(cdA) <= epsilon && OnSegmentXZ(c, d, a, epsilon)) ||
+            (Mathf.Abs(cdB) <= epsilon && OnSegmentXZ(c, d, b, epsilon));
+    }
+
+    static float CrossXZ(Vector3 a, Vector3 b, Vector3 c)
+    {
+        return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+    }
+
+    static bool OnSegmentXZ(Vector3 a, Vector3 b, Vector3 point, float epsilon)
+    {
+        return point.x >= Mathf.Min(a.x, b.x) - epsilon &&
+            point.x <= Mathf.Max(a.x, b.x) + epsilon &&
+            point.z >= Mathf.Min(a.z, b.z) - epsilon &&
+            point.z <= Mathf.Max(a.z, b.z) + epsilon;
+    }
+
+    static bool IsPointInsideContour(Vector3 point, Vector3[] contour)
+    {
+        bool inside = false;
+
+        for (int i = 0, j = contour.Length - 1; i < contour.Length; j = i++)
+        {
+            Vector3 a = contour[i];
+            Vector3 b = contour[j];
+
+            bool crosses = (a.z > point.z) != (b.z > point.z) &&
+                        point.x < (b.x - a.x) *
+                        (point.z - a.z) / (b.z - a.z) + a.x;
+
+            if (crosses)
+                inside = !inside;
+        }
+
+        return inside;
     }
 
     void ClearAllWater()
