@@ -503,7 +503,7 @@ public class GameManager : MonoBehaviour
         }
 
         const int segments = 48;
-        const float heightOffset = 0.5f;
+        const float heightOffset = 0.1f;
         const float lineWidth = 2f;
 
         laserLine.enabled = true;
