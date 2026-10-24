@@ -18,7 +18,7 @@ public class GameManager : MonoBehaviour
     // ========== Tools ==========
     public UIStyleConfig uiStyle;
     public float maxDistance = 80f;
-    public enum ToolMode { Dig, Raise, Paint, Water }
+    public enum ToolMode { Dig, Raise, Paint, Water, Placement }
     public ToolMode currentMode = ToolMode.Dig;
     public float strength = 0.8f;
     public float brushSize = 2.5f;
@@ -31,6 +31,12 @@ public class GameManager : MonoBehaviour
 
     // ========== Target Terrain ==========
     public Terrain targetTerrain;
+
+    // ========== Object Placement ==========
+    public GameObject placementPrefab;
+    public Vector3 placementScale = Vector3.one;
+    public float placementSink = 1f;
+    public float placementIndicatorRadius = 0.5f;
 
     // ========== Particles Settings ==========
     [Header("Particles Settings")]
@@ -92,7 +98,7 @@ public class GameManager : MonoBehaviour
     private TMP_Text brushSizeText;
     private TMP_Text paintLayerText;
     private TMP_Text paintStrengthText;
-    private Button digButton, raiseButton, paintButton, waterButton;
+    private Button digButton, raiseButton, paintButton, waterButton, placementButton;
     private ToolMode lastHighlightMode = (ToolMode)(-1);
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
@@ -264,6 +270,7 @@ public class GameManager : MonoBehaviour
             ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
             ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
             ToolMode.Paint => $"Краска  •  Кисть {brushSize:F1} м  •  {paintStrength:F2}  •  {GetLayerName(paintLayer)}",
+            ToolMode.Placement => "Размещение  •  Нажмите для установки",
             _ => ""
         };
 
@@ -340,7 +347,7 @@ public class GameManager : MonoBehaviour
 
         if (!uiActive)
         {
-            if (currentMode == ToolMode.Water)
+            if (currentMode is ToolMode.Water or ToolMode.Placement)
             {
                 if (just)
                 {
@@ -489,10 +496,16 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+        if (currentMode == ToolMode.Placement)
+        {
+            DrawBrushIndicator(hit.point, placementIndicatorRadius);
+            return;
+        }
+
         DrawBrushIndicator(hit.point);
     }
 
-    void DrawBrushIndicator(Vector3 center)
+    void DrawBrushIndicator(Vector3 center, float radius = -1f)
     {
         Terrain terrain = targetTerrain;
 
@@ -512,22 +525,27 @@ public class GameManager : MonoBehaviour
         laserLine.positionCount = segments;
         laserLine.widthMultiplier = lineWidth;
 
+        
         Color ringColor = currentMode switch
         {
             ToolMode.Dig => digRingColor,
             ToolMode.Raise => raiseRingColor,
             ToolMode.Paint => paintRingColor,
+            ToolMode.Water => new Color(0.2f, 0.6f, 1f),
+            ToolMode.Placement => new Color(1f, 0.8f, 0.2f),
             _ => laserColor
         };
         laserLine.startColor = ringColor;
         laserLine.endColor = ringColor;
 
+        float indicatorRadius = radius > 0f ? radius : brushSize;
+
         for (int i = 0; i < segments; i++)
         {
             float angle = i / (float)segments * Mathf.PI * 2f;
 
-            float x = center.x + Mathf.Cos(angle) * brushSize;
-            float z = center.z + Mathf.Sin(angle) * brushSize;
+            float x = center.x + Mathf.Cos(angle) * indicatorRadius;
+            float z = center.z + Mathf.Sin(angle) * indicatorRadius;
 
             Vector3 position = new Vector3(x, 0f, z);
 
@@ -541,12 +559,20 @@ public class GameManager : MonoBehaviour
         UpdateBrushHint(center, true);
     }
 
+    
     Transform GetRightController()
     {
-        if (rightController && rightController.gameObject.activeInHierarchy) return rightController;
-        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Include))
-            if (t.name == "RightHand Controller" || t.name == "Right Controller" || t.name.Contains("Right"))
-            { rightController = t; break; }
+        if (rightController && rightController.gameObject.activeInHierarchy && (rightController.name == "RightHand Controller" || rightController.name == "Right Controller")) return rightController;
+
+        rightController = null;
+        foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude))
+        {
+            if (t.name == "RightHand Controller" || t.name == "Right Controller")
+            {
+                rightController = t;
+                break;
+            }
+        }
         return rightController;
     }
 
@@ -643,8 +669,38 @@ public class GameManager : MonoBehaviour
                 SpawnPhysicsParticles(worldPos, new Color(0.3f, 0.5f, 1f), waterParticleCount, waterParticleSize, 3f, waterParticleForce);
                 break;
             }
+            case ToolMode.Placement:
+                PlaceObject(worldPos);
+                break;
         }
     }
+
+    
+    void PlaceObject(Vector3 worldPos)
+    {
+        if (!placementPrefab)
+        {
+            Debug.LogWarning("Для размещения назначь модель в поле Placement Prefab.");
+            return;
+        }
+
+        CompleteActiveActions();
+
+        GameObject instance = Instantiate(placementPrefab, worldPos, placementPrefab.transform.rotation);
+        instance.transform.localScale = placementScale;
+
+        Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
+        if (renderers.Length > 0)
+        {
+            Bounds bounds = renderers[0].bounds;
+            foreach (Renderer renderer in renderers) bounds.Encapsulate(renderer.bounds);
+            instance.transform.position += Vector3.up * (worldPos.y - bounds.min.y);
+        }
+
+        instance.transform.position += Vector3.down * placementSink;
+        actionHistory.Add(new PlacementAction(placementPrefab, instance));
+    }
+
 
     void PourWater(Vector3 clickPoint)
     {
@@ -1070,16 +1126,19 @@ public class GameManager : MonoBehaviour
 
         yPos -= ah + 20f;
 
-        float mbw = 140f, mbh = 55f, bm = 25f, sx = 60f, spx = 30f;
+        float mbw = 120f, mbh = 55f, bm = 25f, sx = 60f, spx = 20f;
+
         digButton = CreateModeButton("BtnDig", "Копать", new Vector2(sx, bm), new Vector2(mbw, mbh));
-        raiseButton = CreateModeButton("BtnRaise", "Насыпать", new Vector2(sx + mbw + spx, bm), new Vector2(mbw, mbh));
+        raiseButton = CreateModeButton("BtnRaise", "Насыпать", new Vector2(sx + (mbw + spx), bm), new Vector2(mbw, mbh));
         paintButton = CreateModeButton("BtnPaint", "Красить", new Vector2(sx + (mbw + spx) * 2, bm), new Vector2(mbw, mbh));
         waterButton = CreateModeButton("BtnWater", "Вода", new Vector2(sx + (mbw + spx) * 3, bm), new Vector2(mbw, mbh));
+        placementButton = CreateModeButton("BtnPlacement", "Размещение", new Vector2(sx + (mbw + spx) * 4, bm), new Vector2(mbw, mbh));
 
         digButton.onClick.AddListener(() => currentMode = ToolMode.Dig);
         raiseButton.onClick.AddListener(() => currentMode = ToolMode.Raise);
         paintButton.onClick.AddListener(() => currentMode = ToolMode.Paint);
         waterButton.onClick.AddListener(() => currentMode = ToolMode.Water);
+        placementButton.onClick.AddListener(() => currentMode = ToolMode.Placement);
 
         float bigH = 65f, hp = 30f, gap = 10f;
         float baseY = bm + mbh + 10f;
@@ -1191,7 +1250,16 @@ public class GameManager : MonoBehaviour
 
     void UpdateUI()
     {
-        string modeStr = currentMode switch { ToolMode.Dig => "Копание", ToolMode.Raise => "Насыпь", ToolMode.Paint => "Краска", ToolMode.Water => "Вода", _ => "" };
+        string modeStr = currentMode switch
+        {
+            ToolMode.Dig => "Копание",
+            ToolMode.Raise => "Насыпь",
+            ToolMode.Paint => "Краска",
+            ToolMode.Water => "Вода",
+            ToolMode.Placement => "Размещение",
+            _ => ""
+        };
+
         if (modeText) modeText.text = $"Режим: {modeStr}";
 
         if (currentMode != lastHighlightMode)
@@ -1201,6 +1269,7 @@ public class GameManager : MonoBehaviour
             SetModeButtonColor(raiseButton, currentMode == ToolMode.Raise, raiseRingColor, baseColor);
             SetModeButtonColor(paintButton, currentMode == ToolMode.Paint, paintRingColor, baseColor);
             SetModeButtonColor(waterButton, currentMode == ToolMode.Water, new Color(0.2f, 0.6f, 1f), baseColor);
+            SetModeButtonColor(placementButton, currentMode == ToolMode.Placement, new Color(1f, 0.8f, 0.2f), baseColor);
             lastHighlightMode = currentMode;
         }
 
@@ -1208,8 +1277,10 @@ public class GameManager : MonoBehaviour
         bool paint = currentMode == ToolMode.Paint;
         bool water = currentMode == ToolMode.Water;
 
-        if (brushSizeText) brushSizeText.gameObject.SetActive(!water);
-        if (brushSizeSlider) brushSizeSlider.gameObject.SetActive(!water);
+        bool placement = currentMode == ToolMode.Placement;
+
+        if (brushSizeText) brushSizeText.gameObject.SetActive(!water && !placement);
+        if (brushSizeSlider) brushSizeSlider.gameObject.SetActive(!water && !placement);
         if (strengthText) strengthText.gameObject.SetActive(digRaise);
         if (strengthSlider) strengthSlider.gameObject.SetActive(digRaise);
         if (paintStrengthText) paintStrengthText.gameObject.SetActive(paint);
