@@ -459,7 +459,7 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            strength = Mathf.Clamp(strength + delta, 0.001f, 3f);
+            strength = Mathf.Clamp(strength + delta, 0.001f, 0.05f);
             if (strengthSlider) strengthSlider.SetValueWithoutNotify(strength);
         }
     }
@@ -1087,7 +1087,7 @@ public class GameManager : MonoBehaviour
         strengthText.rectTransform.sizeDelta = new Vector2(250, lh);
         strengthTextOrigPos = strengthText.rectTransform.anchoredPosition;
         yPos -= lh + 8;
-        strengthSlider = CreateSlider("StrengthSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.001f, 3f, 0.8f);
+        strengthSlider = CreateSlider("StrengthSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.001f, 0.05f, strength);
         strengthSlider.onValueChanged.AddListener(v => strength = v);
         strengthSliderOrigPos = strengthSlider.GetComponent<RectTransform>().anchoredPosition;
         yPos -= sh + rs;
