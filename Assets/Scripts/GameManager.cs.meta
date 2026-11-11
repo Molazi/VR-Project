@@ -1,2 +1,16 @@
 fileFormatVersion: 2
 guid: 6d3912869989bb0488aa1bb7654b500a
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - waterPrefab: {fileID: 6826583235836770615, guid: d692b6c55dffeb84d8ef388026d7873f, type: 3}
+  - uiStyle: {fileID: 11400000, guid: 7050a79898247f64ebad0ceb141b2177, type: 2}
+  - targetTerrain: {fileID: 1033489138817457020, guid: 27e5be6b3c70a5747985679ac877d5d5, type: 3}
+  - materialLibraryAsset: {fileID: 11400000, guid: ed078debdbbf62648b3ed5eaaec9e82d, type: 2}
+  - placementPrefab: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

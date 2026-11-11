@@ -8,12 +8,8 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 public class GameManager : MonoBehaviour
 {
     // ========== Water ==========
-    [Header("Water Settings")]
-    public float waterEdgeOffset = 0.02f;
+    [Header("Water — Grid System")]
     public ProceduralWaterMesh waterPrefab;
-    public float waterMaxRadius = 5f;
-    public float waterDepthThreshold = 0.05f;
-    public int waterBoundaryRays = 128;
 
     // ========== Tools ==========
     public UIStyleConfig uiStyle;
@@ -31,6 +27,8 @@ public class GameManager : MonoBehaviour
 
     // ========== Target Terrain ==========
     public Terrain targetTerrain;
+    public MaterialProfileLibraryAsset materialLibraryAsset;
+    private MaterialProfileLibrary materialLibrary;
 
     // ========== Object Placement ==========
     public GameObject placementPrefab;
@@ -62,7 +60,6 @@ public class GameManager : MonoBehaviour
     public Color raiseRingColor = new Color(0.15f, 1f, 0.3f);
     public Color paintRingColor = new Color(0.7f, 0.3f, 1f);
     public float laserWidth = 0.02f;
-    private const int BrushIndicatorSegments = 48;
 
     // ========== Activation (Grip) ==========
     public InputActionProperty activateAction;
@@ -87,8 +84,8 @@ public class GameManager : MonoBehaviour
     public int grassLayerIndex = 0;
     public int soilLayerIndex = 1;
     public int rockLayerIndex = 2;
-    public float rockHeight = 200f;
-    public float soilHeight = 400f;
+    public float rockHeight = 50f;
+    public float soilHeight = 100f;
 
     // ========== UI ==========
     private GameObject uiRoot;
@@ -103,15 +100,12 @@ public class GameManager : MonoBehaviour
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
     private Button clearWaterButton;
+
     private class WaterRecord
     {
         public ProceduralWaterMesh water;
         public WaterState state;
-        public WaterRecord(ProceduralWaterMesh water, WaterState state)
-        {
-            this.water = water;
-            this.state = state;
-        }
+        public WaterRecord(ProceduralWaterMesh water, WaterState state) { this.water = water; this.state = state; }
     }
     private readonly List<WaterRecord> waterHistory = new();
 
@@ -148,12 +142,18 @@ public class GameManager : MonoBehaviour
 
     private readonly ActionHistory actionHistory = new();
     private TerrainAction activeTerrainAction;
-    private PaintAction activePaintAction;
 
     void Awake()
     {
         if (targetTerrain == null) targetTerrain = Terrain.activeTerrain;
         if (targetTerrain != null) currentTerrainData = targetTerrain.terrainData;
+
+        if (materialLibraryAsset != null) materialLibrary = materialLibraryAsset.library;
+        if (materialLibrary == null || materialLibrary.profiles == null || materialLibrary.profiles.Count == 0)
+            materialLibrary = MaterialProfileLibrary.CreateDefault();
+
+        if (targetTerrain != null) materialLibrary.ApplyAllToTerrain(targetTerrain);
+
         CreateUI();
         if (uiRoot != null) uiRoot.SetActive(false);
         lastUIDistance = uiDistance;
@@ -169,7 +169,6 @@ public class GameManager : MonoBehaviour
             int res = currentTerrainData.heightmapResolution;
             originalHeights = currentTerrainData.GetHeights(0, 0, res, res);
             int alphaRes = currentTerrainData.alphamapResolution;
-            int layers = currentTerrainData.alphamapLayers;
             originalAlphamaps = currentTerrainData.GetAlphamaps(0, 0, alphaRes, alphaRes);
         }
         ResetTerrainToOriginal();
@@ -231,17 +230,13 @@ public class GameManager : MonoBehaviour
     void UpdateBrushHint(Vector3 brushCenter, bool brushVisible)
     {
         if (!brushHint) return;
-
         bool show = showBrushHint && currentMode != ToolMode.Water;
         brushHint.gameObject.SetActive(show);
         if (!show) return;
 
-        bool changed =
-            currentMode != lastHintMode ||
-            !Mathf.Approximately(brushSize, lastHintBrush) ||
-            !Mathf.Approximately(strength, lastHintStrength) ||
-            !Mathf.Approximately(paintStrength, lastHintPaint) ||
-            paintLayer != lastHintLayer;
+        bool changed = currentMode != lastHintMode || !Mathf.Approximately(brushSize, lastHintBrush) ||
+                       !Mathf.Approximately(strength, lastHintStrength) || !Mathf.Approximately(paintStrength, lastHintPaint) ||
+                       paintLayer != lastHintLayer;
 
         Transform leftController = FindLeftController();
         if (leftController != null)
@@ -294,18 +289,12 @@ public class GameManager : MonoBehaviour
         foreach (string name in candidates)
         {
             GameObject found = GameObject.Find(name);
-            if (found != null)
-            {
-                cachedLeftController = found.transform;
-                return cachedLeftController;
-            }
+            if (found != null) { cachedLeftController = found.transform; return cachedLeftController; }
         }
         UnityEngine.XR.InputDevice leftHand = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.LeftHand);
         if (leftHand.isValid)
         {
-            GameObject rig = GameObject.Find("XR Origin");
-            if (rig == null) rig = GameObject.Find("XROrigin");
-            if (rig == null) rig = GameObject.Find("XR Rig");
+            GameObject rig = GameObject.Find("XR Origin") ?? GameObject.Find("XROrigin") ?? GameObject.Find("XR Rig");
             if (rig != null)
             {
                 Transform t = rig.transform.Find("Camera Offset/Left Controller");
@@ -319,30 +308,18 @@ public class GameManager : MonoBehaviour
     Vector3 GetBrushHintPosition(Vector3 brushCenter)
     {
         float groundY = brushCenter.y;
-        if (targetTerrain != null)
-            groundY = targetTerrain.SampleHeight(brushCenter) + targetTerrain.transform.position.y;
+        if (targetTerrain != null) groundY = targetTerrain.SampleHeight(brushCenter) + targetTerrain.transform.position.y;
         float hintY = Mathf.Max(brushCenter.y + brushHintHeight, groundY + brushHintMinAboveTerrain);
         return new Vector3(brushCenter.x, hintY, brushCenter.z);
     }
 
     void Update()
     {
-        if (toggleUIAction.action != null &&
-            toggleUIAction.action.WasPressedThisFrame())
-        {
-            ToggleUI();
-        }
-
-        bool grip =
-            activateAction.action != null &&
-            activateAction.action.IsPressed();
-
-        bool just =
-            activateAction.action != null &&
-            activateAction.action.WasPressedThisFrame();
+        if (toggleUIAction.action != null && toggleUIAction.action.WasPressedThisFrame()) ToggleUI();
+        bool grip = activateAction.action != null && activateAction.action.IsPressed();
+        bool just = activateAction.action != null && activateAction.action.WasPressedThisFrame();
 
         UpdateLaser(grip);
-
         HandleBrushButtons();
 
         if (!uiActive)
@@ -352,95 +329,56 @@ public class GameManager : MonoBehaviour
                 if (just)
                 {
                     Transform controller = GetRightController();
-
-                    if (controller != null)
-                        ExecuteAction(controller);
+                    if (controller != null) ExecuteAction(controller);
                 }
             }
             else if (grip && Time.time - lastActionTime >= actionInterval)
             {
                 Transform controller = GetRightController();
-
                 if (controller != null)
                 {
-                    if (currentMode == ToolMode.Paint)
+                    if (currentMode == ToolMode.Dig || currentMode == ToolMode.Raise || currentMode == ToolMode.Paint)
                     {
-                        if (activePaintAction == null)
-                            activePaintAction = new PaintAction();
+                        if (activeTerrainAction == null) activeTerrainAction = new TerrainAction();
                     }
-                    else if (currentMode == ToolMode.Dig ||
-                            currentMode == ToolMode.Raise)
-                    {
-                        if (activeTerrainAction == null)
-                            activeTerrainAction = new TerrainAction();
-                    }
-
                     ExecuteAction(controller);
                     lastActionTime = Time.time;
                 }
             }
         }
 
-        if (!grip)
-        {
-            CompleteActiveActions();
-        }
+        if (!grip) CompleteActiveActions();
 
         if (uiActive && uiRoot != null)
         {
-            if (uiDistance != lastUIDistance ||
-                uiScale != lastUIScale)
+            if (uiDistance != lastUIDistance || uiScale != lastUIScale)
             {
-                uiRoot.transform.localPosition =
-                    new Vector3(0, 0, uiDistance);
-
+                uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance);
                 uiRoot.transform.localScale = uiScale;
-
                 lastUIDistance = uiDistance;
                 lastUIScale = uiScale;
             }
         }
 
-        if (undoAction.action != null &&
-            undoAction.action.WasPressedThisFrame())
-        {
-            actionHistory.Undo();
-        }
-
-        if (redoAction.action != null &&
-            redoAction.action.WasPressedThisFrame())
-        {
-            actionHistory.Redo();
-        }
+        if (undoAction.action != null && undoAction.action.WasPressedThisFrame()) actionHistory.Undo();
+        if (redoAction.action != null && redoAction.action.WasPressedThisFrame()) actionHistory.Redo();
 
         UpdateUI();
     }
 
     void HandleBrushButtons()
     {
-        if (ApplyBrushButton(brushBiggerAction, ref brushBiggerNextTime))
-            ChangeBrushSize(brushButtonStep);
-        if (ApplyBrushButton(brushSmallerAction, ref brushSmallerNextTime))
-            ChangeBrushSize(-brushButtonStep);
-        if (ApplyBrushButton(strengthUpAction, ref strengthUpNextTime))
-            ChangeStrength(strengthButtonStep);
-        if (ApplyBrushButton(strengthDownAction, ref strengthDownNextTime))
-            ChangeStrength(-strengthButtonStep);
+        if (ApplyBrushButton(brushBiggerAction, ref brushBiggerNextTime)) ChangeBrushSize(brushButtonStep);
+        if (ApplyBrushButton(brushSmallerAction, ref brushSmallerNextTime)) ChangeBrushSize(-brushButtonStep);
+        if (ApplyBrushButton(strengthUpAction, ref strengthUpNextTime)) ChangeStrength(strengthButtonStep);
+        if (ApplyBrushButton(strengthDownAction, ref strengthDownNextTime)) ChangeStrength(-strengthButtonStep);
     }
 
     bool ApplyBrushButton(InputActionProperty property, ref float nextTime)
     {
         if (property.action == null) return false;
-        if (property.action.WasPressedThisFrame())
-        {
-            nextTime = Time.time + brushButtonHoldDelay;
-            return true;
-        }
-        if (property.action.IsPressed() && Time.time >= nextTime)
-        {
-            nextTime = Time.time + brushButtonHoldRate;
-            return true;
-        }
+        if (property.action.WasPressedThisFrame()) { nextTime = Time.time + brushButtonHoldDelay; return true; }
+        if (property.action.IsPressed() && Time.time >= nextTime) { nextTime = Time.time + brushButtonHoldRate; return true; }
         return false;
     }
 
@@ -467,18 +405,11 @@ public class GameManager : MonoBehaviour
     void UpdateLaser(bool pressed)
     {
         if (!laserLine) return;
-
         Transform controller = GetRightController();
-
-        if (!controller)
-        {
-            laserLine.enabled = false;
-            return;
-        }
+        if (!controller) { laserLine.enabled = false; return; }
 
         Vector3 direction = Quaternion.AngleAxis(rayDownAngle, controller.right) * controller.forward;
         Ray ray = new Ray(controller.position, direction);
-
         int mask = 1 << LayerMask.NameToLayer("Terrain");
         if (mask == 0) mask = -1;
 
@@ -489,43 +420,24 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        if (currentMode == ToolMode.Water)
-        {
-            laserLine.enabled = false;
-            UpdateBrushHint(Vector3.zero, false);
-            return;
-        }
-
-        if (currentMode == ToolMode.Placement)
-        {
-            DrawBrushIndicator(hit.point, placementIndicatorRadius);
-            return;
-        }
-
+        if (currentMode == ToolMode.Water) { laserLine.enabled = false; UpdateBrushHint(Vector3.zero, false); return; }
+        if (currentMode == ToolMode.Placement) { DrawBrushIndicator(hit.point, placementIndicatorRadius); return; }
         DrawBrushIndicator(hit.point);
     }
 
     void DrawBrushIndicator(Vector3 center, float radius = -1f)
     {
         Terrain terrain = targetTerrain;
-
-        if (!terrain)
-        {
-            laserLine.enabled = false;
-            return;
-        }
+        if (!terrain) { laserLine.enabled = false; return; }
 
         const int segments = 48;
         const float heightOffset = 0.1f;
-        const float lineWidth = 2f;
-
         laserLine.enabled = true;
         laserLine.useWorldSpace = true;
         laserLine.loop = true;
         laserLine.positionCount = segments;
-        laserLine.widthMultiplier = lineWidth;
+        laserLine.widthMultiplier = 2f;
 
-        
         Color ringColor = currentMode switch
         {
             ToolMode.Dig => digRingColor,
@@ -539,39 +451,26 @@ public class GameManager : MonoBehaviour
         laserLine.endColor = ringColor;
 
         float indicatorRadius = radius > 0f ? radius : brushSize;
-
         for (int i = 0; i < segments; i++)
         {
             float angle = i / (float)segments * Mathf.PI * 2f;
-
             float x = center.x + Mathf.Cos(angle) * indicatorRadius;
             float z = center.z + Mathf.Sin(angle) * indicatorRadius;
-
             Vector3 position = new Vector3(x, 0f, z);
-
             float terrainHeight = terrain.SampleHeight(position) + terrain.transform.position.y;
-
             position.y = terrainHeight + heightOffset;
-
             laserLine.SetPosition(i, position);
         }
-
         UpdateBrushHint(center, true);
     }
 
-    
     Transform GetRightController()
     {
         if (rightController && rightController.gameObject.activeInHierarchy && (rightController.name == "RightHand Controller" || rightController.name == "Right Controller")) return rightController;
-
         rightController = null;
         foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude))
         {
-            if (t.name == "RightHand Controller" || t.name == "Right Controller")
-            {
-                rightController = t;
-                break;
-            }
+            if (t.name == "RightHand Controller" || t.name == "Right Controller") { rightController = t; break; }
         }
         return rightController;
     }
@@ -583,19 +482,8 @@ public class GameManager : MonoBehaviour
         if (uiActive)
         {
             Camera cam = Camera.main;
-            if (cam)
-            {
-                uiRoot.transform.SetParent(cam.transform, false);
-                uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance);
-                uiRoot.transform.localRotation = Quaternion.identity;
-                uiRoot.transform.localScale = uiScale;
-            }
-            else
-            {
-                uiRoot.transform.SetParent(null);
-                uiRoot.transform.position = new Vector3(0, 2, 1.5f);
-                uiRoot.transform.LookAt(Vector3.zero);
-            }
+            if (cam) { uiRoot.transform.SetParent(cam.transform, false); uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance); uiRoot.transform.localRotation = Quaternion.identity; uiRoot.transform.localScale = uiScale; }
+            else { uiRoot.transform.SetParent(null); uiRoot.transform.position = new Vector3(0, 2, 1.5f); uiRoot.transform.LookAt(Vector3.zero); }
             uiRoot.SetActive(true);
         }
         else { uiRoot.SetActive(false); uiRoot.transform.SetParent(null); }
@@ -612,34 +500,29 @@ public class GameManager : MonoBehaviour
             if (hit.collider.GetComponent<Terrain>()) PerformAction(hit.point);
     }
 
-    void ApplyDeformTool(
-    Vector3 worldPos,
-    float signedStrength,
-    int particleCount,
-    float particleSize,
-    float particleForce)
+    void ApplyDeformTool(Vector3 worldPos, float signedStrength, int particleCount, float particleSize, float particleForce)
     {
-        activeTerrainAction.Record(
-            targetTerrain,
-            worldPos,
-            brushSize,
-            () => DeformTerrain(worldPos, signedStrength)
-        );
-
-        SpawnPhysicsParticles(
-            worldPos,
-            new Color(0.77f, 0.64f, 0.52f),
-            particleCount,
-            particleSize,
-            1.5f,
-            particleForce
-        );
+        activeTerrainAction.Record(targetTerrain, worldPos, brushSize, () => DeformTerrain(worldPos, signedStrength));
+        SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), particleCount, particleSize, 1.5f, particleForce);
     }
 
     void DeformTerrain(Vector3 worldPos, float signedStrength)
     {
         TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize, minTerrainHeight, maxTerrainHeight, smoothingStrength);
         PaintTerrainByHeight(worldPos);
+    }
+
+    RectInt GetAlphaBoundsForPaint(Vector3 worldPos, float brushSize)
+    {
+        TerrainData data = targetTerrain.terrainData;
+        Vector3 lp = worldPos - targetTerrain.transform.position;
+        int w = data.alphamapWidth, h = data.alphamapHeight;
+        int cx = Mathf.RoundToInt(lp.x / data.size.x * (w - 1));
+        int cy = Mathf.RoundToInt(lp.z / data.size.z * (h - 1));
+        int rad = Mathf.Clamp(Mathf.CeilToInt(brushSize / data.size.x * w), 1, 50);
+        int x0 = Mathf.Max(0, cx - rad), x1 = Mathf.Min(w - 1, cx + rad);
+        int y0 = Mathf.Max(0, cy - rad), y1 = Mathf.Min(h - 1, cy + rad);
+        return new RectInt(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
     }
 
     void PerformAction(Vector3 worldPos)
@@ -653,9 +536,20 @@ public class GameManager : MonoBehaviour
                 ApplyDeformTool(worldPos, strength * Time.deltaTime, raiseParticleCount, raiseParticleSize, raiseParticleForce);
                 break;
             case ToolMode.Paint:
-                activePaintAction.Record(targetTerrain, worldPos, brushSize, () => TerrainDeformer.PaintTexture(targetTerrain, worldPos, brushSize, paintStrength, paintLayer));
-                SpawnPhysicsParticles(worldPos, Random.ColorHSV(0f, 1f, 0.7f, 1f, 0.8f, 1f), paintParticleCount, paintParticleSize, 2f, paintParticleForce);
-                break;
+                {
+                    Vector3 wp = worldPos;
+                    activeTerrainAction.Record(targetTerrain, wp, brushSize, () =>
+                    {
+                        TerrainData data = targetTerrain.terrainData;
+                        RectInt bounds = GetAlphaBoundsForPaint(wp, brushSize);
+                        float[,,] oldAlphas = data.GetAlphamaps(bounds.x, bounds.y, bounds.width, bounds.height);
+                        TerrainDeformer.PaintTexture(targetTerrain, wp, brushSize, paintStrength, paintLayer);
+                        float[,,] newAlphas = data.GetAlphamaps(bounds.x, bounds.y, bounds.width, bounds.height);
+                        TerrainMaterialShaper.ApplyAlphaHeightDelta(targetTerrain, bounds, oldAlphas, newAlphas, materialLibrary.profiles);
+                    });
+                    SpawnPhysicsParticles(wp, Random.ColorHSV(0f, 1f, 0.7f, 1f, 0.8f, 1f), paintParticleCount, paintParticleSize, 2f, paintParticleForce);
+                    break;
+                }
             case ToolMode.Water:
             {
                 CompleteActiveActions();
@@ -678,17 +572,10 @@ public class GameManager : MonoBehaviour
     
     void PlaceObject(Vector3 worldPos)
     {
-        if (!placementPrefab)
-        {
-            Debug.LogWarning("Для размещения назначь модель в поле Placement Prefab.");
-            return;
-        }
-
+        if (!placementPrefab) { Debug.LogWarning("Назначьте Placement Prefab."); return; }
         CompleteActiveActions();
-
         GameObject instance = Instantiate(placementPrefab, worldPos, placementPrefab.transform.rotation);
         instance.transform.localScale = placementScale;
-
         Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
         if (renderers.Length > 0)
         {
@@ -696,7 +583,6 @@ public class GameManager : MonoBehaviour
             foreach (Renderer renderer in renderers) bounds.Encapsulate(renderer.bounds);
             instance.transform.position += Vector3.up * (worldPos.y - bounds.min.y);
         }
-
         instance.transform.position += Vector3.down * placementSink;
         actionHistory.Add(new PlacementAction(placementPrefab, instance));
     }
