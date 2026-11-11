@@ -24,6 +24,9 @@ public class TerrainMaterialProfile
     public NoiseType noiseType = NoiseType.Perlin;
     [Tooltip("Высота неровностей в метрах")] public float amplitude = 0.1f;
     [Tooltip("Частота шума, 1/м")] public float frequency = 0.1f;
+    [Tooltip("Растяжение шума по X и Z. Создает вытянутые барханы или гребни")] 
+    public Vector2 noiseScale = new Vector2(1f, 1f); 
+
     public int seed = 1;
     [Range(1, 8)] public int octaves = 4;
     public float lacunarity = 2f;

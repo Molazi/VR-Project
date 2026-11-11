@@ -6,8 +6,10 @@ public static class TerrainNoise
 {
     public static float Sample(float worldX, float worldZ, TerrainMaterialProfile p)
     {
-        float fx = worldX * p.frequency;
-        float fz = worldZ * p.frequency;
+        // Применяем растяжение (для барханов)
+        float fx = worldX * p.frequency * p.noiseScale.x;
+        float fz = worldZ * p.frequency * p.noiseScale.y;
+        
         float sum = 0f, amp = 1f, norm = 0f;
         float freq = 1f;
         int seedX = p.seed * 13;
@@ -26,7 +28,7 @@ public static class TerrainNoise
                     n = Mathf.Pow(n, Mathf.Max(0.1f, p.sharpness));
                     break;
                 case NoiseType.Billow:
-                    n = Mathf.Abs(2f * n - 1f);
+                    n = Mathf.Abs(2f * n - 1f); // Пузырчатый шум
                     break;
             }
 
@@ -37,8 +39,6 @@ public static class TerrainNoise
         }
 
         float result = norm > 0f ? sum / norm : 0f;
-        
-        // Делаем шум более контрастным (от -1 до 1)
-        return (result - 0.5f) * 2f;
+        return (result - 0.5f) * 2f; // Значения от -1 до 1
     }
 }
