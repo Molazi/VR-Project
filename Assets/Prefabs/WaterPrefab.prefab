@@ -104,3 +104,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ProceduralWaterMesh
   waterMaterial: {fileID: 2100000, guid: 141d9d6ca43b6c843965491604c6deff, type: 2}
   uvScale: 1
+  skirtDepth: 11
+  smoothingIterations: 6
+  smoothingStrength: 0.55
