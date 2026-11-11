@@ -8,12 +8,12 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 public class GameManager : MonoBehaviour
 {
     // ========== Water ==========
-    [Header("Water Settings")]
-    public float waterEdgeOffset = 0.02f;
+    [Header("Water — Grid System")]
     public ProceduralWaterMesh waterPrefab;
-    public float waterMaxRadius = 5f;
-    public float waterDepthThreshold = 0.05f;
-    public int waterBoundaryRays = 128;
+    public float waterSearchRadius = 100f; // Радиус поиска ямы
+    public float waterGridStep = 1.0f; // Шаг поиска уровня воды
+    public float waterMinDepth = 0.02f;
+    public float waterMeshStep = 0.5f; // Размер ячейки меша (чем меньше, тем плавнее края)
 
     // ========== Tools ==========
     public UIStyleConfig uiStyle;
@@ -31,6 +31,8 @@ public class GameManager : MonoBehaviour
 
     // ========== Target Terrain ==========
     public Terrain targetTerrain;
+    public MaterialProfileLibraryAsset materialLibraryAsset;
+    private MaterialProfileLibrary materialLibrary;
 
     // ========== Object Placement ==========
     public GameObject placementPrefab;
@@ -62,7 +64,6 @@ public class GameManager : MonoBehaviour
     public Color raiseRingColor = new Color(0.15f, 1f, 0.3f);
     public Color paintRingColor = new Color(0.7f, 0.3f, 1f);
     public float laserWidth = 0.02f;
-    private const int BrushIndicatorSegments = 48;
 
     // ========== Activation (Grip) ==========
     public InputActionProperty activateAction;
@@ -87,8 +88,8 @@ public class GameManager : MonoBehaviour
     public int grassLayerIndex = 0;
     public int soilLayerIndex = 1;
     public int rockLayerIndex = 2;
-    public float rockHeight = 200f;
-    public float soilHeight = 400f;
+    public float rockHeight = 50f;
+    public float soilHeight = 100f;
 
     // ========== UI ==========
     private GameObject uiRoot;
@@ -103,15 +104,12 @@ public class GameManager : MonoBehaviour
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
     private Button clearWaterButton;
+
     private class WaterRecord
     {
         public ProceduralWaterMesh water;
         public WaterState state;
-        public WaterRecord(ProceduralWaterMesh water, WaterState state)
-        {
-            this.water = water;
-            this.state = state;
-        }
+        public WaterRecord(ProceduralWaterMesh water, WaterState state) { this.water = water; this.state = state; }
     }
     private readonly List<WaterRecord> waterHistory = new();
 
@@ -148,12 +146,18 @@ public class GameManager : MonoBehaviour
 
     private readonly ActionHistory actionHistory = new();
     private TerrainAction activeTerrainAction;
-    private PaintAction activePaintAction;
 
     void Awake()
     {
         if (targetTerrain == null) targetTerrain = Terrain.activeTerrain;
         if (targetTerrain != null) currentTerrainData = targetTerrain.terrainData;
+
+        if (materialLibraryAsset != null) materialLibrary = materialLibraryAsset.library;
+        if (materialLibrary == null || materialLibrary.profiles == null || materialLibrary.profiles.Count == 0)
+            materialLibrary = MaterialProfileLibrary.CreateDefault();
+
+        if (targetTerrain != null) materialLibrary.ApplyAllToTerrain(targetTerrain);
+
         CreateUI();
         if (uiRoot != null) uiRoot.SetActive(false);
         lastUIDistance = uiDistance;
@@ -169,7 +173,6 @@ public class GameManager : MonoBehaviour
             int res = currentTerrainData.heightmapResolution;
             originalHeights = currentTerrainData.GetHeights(0, 0, res, res);
             int alphaRes = currentTerrainData.alphamapResolution;
-            int layers = currentTerrainData.alphamapLayers;
             originalAlphamaps = currentTerrainData.GetAlphamaps(0, 0, alphaRes, alphaRes);
         }
         ResetTerrainToOriginal();
@@ -231,17 +234,13 @@ public class GameManager : MonoBehaviour
     void UpdateBrushHint(Vector3 brushCenter, bool brushVisible)
     {
         if (!brushHint) return;
-
         bool show = showBrushHint && currentMode != ToolMode.Water;
         brushHint.gameObject.SetActive(show);
         if (!show) return;
 
-        bool changed =
-            currentMode != lastHintMode ||
-            !Mathf.Approximately(brushSize, lastHintBrush) ||
-            !Mathf.Approximately(strength, lastHintStrength) ||
-            !Mathf.Approximately(paintStrength, lastHintPaint) ||
-            paintLayer != lastHintLayer;
+        bool changed = currentMode != lastHintMode || !Mathf.Approximately(brushSize, lastHintBrush) ||
+                       !Mathf.Approximately(strength, lastHintStrength) || !Mathf.Approximately(paintStrength, lastHintPaint) ||
+                       paintLayer != lastHintLayer;
 
         Transform leftController = FindLeftController();
         if (leftController != null)
@@ -294,18 +293,12 @@ public class GameManager : MonoBehaviour
         foreach (string name in candidates)
         {
             GameObject found = GameObject.Find(name);
-            if (found != null)
-            {
-                cachedLeftController = found.transform;
-                return cachedLeftController;
-            }
+            if (found != null) { cachedLeftController = found.transform; return cachedLeftController; }
         }
         UnityEngine.XR.InputDevice leftHand = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.LeftHand);
         if (leftHand.isValid)
         {
-            GameObject rig = GameObject.Find("XR Origin");
-            if (rig == null) rig = GameObject.Find("XROrigin");
-            if (rig == null) rig = GameObject.Find("XR Rig");
+            GameObject rig = GameObject.Find("XR Origin") ?? GameObject.Find("XROrigin") ?? GameObject.Find("XR Rig");
             if (rig != null)
             {
                 Transform t = rig.transform.Find("Camera Offset/Left Controller");
@@ -319,30 +312,18 @@ public class GameManager : MonoBehaviour
     Vector3 GetBrushHintPosition(Vector3 brushCenter)
     {
         float groundY = brushCenter.y;
-        if (targetTerrain != null)
-            groundY = targetTerrain.SampleHeight(brushCenter) + targetTerrain.transform.position.y;
+        if (targetTerrain != null) groundY = targetTerrain.SampleHeight(brushCenter) + targetTerrain.transform.position.y;
         float hintY = Mathf.Max(brushCenter.y + brushHintHeight, groundY + brushHintMinAboveTerrain);
         return new Vector3(brushCenter.x, hintY, brushCenter.z);
     }
 
     void Update()
     {
-        if (toggleUIAction.action != null &&
-            toggleUIAction.action.WasPressedThisFrame())
-        {
-            ToggleUI();
-        }
-
-        bool grip =
-            activateAction.action != null &&
-            activateAction.action.IsPressed();
-
-        bool just =
-            activateAction.action != null &&
-            activateAction.action.WasPressedThisFrame();
+        if (toggleUIAction.action != null && toggleUIAction.action.WasPressedThisFrame()) ToggleUI();
+        bool grip = activateAction.action != null && activateAction.action.IsPressed();
+        bool just = activateAction.action != null && activateAction.action.WasPressedThisFrame();
 
         UpdateLaser(grip);
-
         HandleBrushButtons();
 
         if (!uiActive)
@@ -352,95 +333,56 @@ public class GameManager : MonoBehaviour
                 if (just)
                 {
                     Transform controller = GetRightController();
-
-                    if (controller != null)
-                        ExecuteAction(controller);
+                    if (controller != null) ExecuteAction(controller);
                 }
             }
             else if (grip && Time.time - lastActionTime >= actionInterval)
             {
                 Transform controller = GetRightController();
-
                 if (controller != null)
                 {
-                    if (currentMode == ToolMode.Paint)
+                    if (currentMode == ToolMode.Dig || currentMode == ToolMode.Raise || currentMode == ToolMode.Paint)
                     {
-                        if (activePaintAction == null)
-                            activePaintAction = new PaintAction();
+                        if (activeTerrainAction == null) activeTerrainAction = new TerrainAction();
                     }
-                    else if (currentMode == ToolMode.Dig ||
-                            currentMode == ToolMode.Raise)
-                    {
-                        if (activeTerrainAction == null)
-                            activeTerrainAction = new TerrainAction();
-                    }
-
                     ExecuteAction(controller);
                     lastActionTime = Time.time;
                 }
             }
         }
 
-        if (!grip)
-        {
-            CompleteActiveActions();
-        }
+        if (!grip) CompleteActiveActions();
 
         if (uiActive && uiRoot != null)
         {
-            if (uiDistance != lastUIDistance ||
-                uiScale != lastUIScale)
+            if (uiDistance != lastUIDistance || uiScale != lastUIScale)
             {
-                uiRoot.transform.localPosition =
-                    new Vector3(0, 0, uiDistance);
-
+                uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance);
                 uiRoot.transform.localScale = uiScale;
-
                 lastUIDistance = uiDistance;
                 lastUIScale = uiScale;
             }
         }
 
-        if (undoAction.action != null &&
-            undoAction.action.WasPressedThisFrame())
-        {
-            actionHistory.Undo();
-        }
-
-        if (redoAction.action != null &&
-            redoAction.action.WasPressedThisFrame())
-        {
-            actionHistory.Redo();
-        }
+        if (undoAction.action != null && undoAction.action.WasPressedThisFrame()) actionHistory.Undo();
+        if (redoAction.action != null && redoAction.action.WasPressedThisFrame()) actionHistory.Redo();
 
         UpdateUI();
     }
 
     void HandleBrushButtons()
     {
-        if (ApplyBrushButton(brushBiggerAction, ref brushBiggerNextTime))
-            ChangeBrushSize(brushButtonStep);
-        if (ApplyBrushButton(brushSmallerAction, ref brushSmallerNextTime))
-            ChangeBrushSize(-brushButtonStep);
-        if (ApplyBrushButton(strengthUpAction, ref strengthUpNextTime))
-            ChangeStrength(strengthButtonStep);
-        if (ApplyBrushButton(strengthDownAction, ref strengthDownNextTime))
-            ChangeStrength(-strengthButtonStep);
+        if (ApplyBrushButton(brushBiggerAction, ref brushBiggerNextTime)) ChangeBrushSize(brushButtonStep);
+        if (ApplyBrushButton(brushSmallerAction, ref brushSmallerNextTime)) ChangeBrushSize(-brushButtonStep);
+        if (ApplyBrushButton(strengthUpAction, ref strengthUpNextTime)) ChangeStrength(strengthButtonStep);
+        if (ApplyBrushButton(strengthDownAction, ref strengthDownNextTime)) ChangeStrength(-strengthButtonStep);
     }
 
     bool ApplyBrushButton(InputActionProperty property, ref float nextTime)
     {
         if (property.action == null) return false;
-        if (property.action.WasPressedThisFrame())
-        {
-            nextTime = Time.time + brushButtonHoldDelay;
-            return true;
-        }
-        if (property.action.IsPressed() && Time.time >= nextTime)
-        {
-            nextTime = Time.time + brushButtonHoldRate;
-            return true;
-        }
+        if (property.action.WasPressedThisFrame()) { nextTime = Time.time + brushButtonHoldDelay; return true; }
+        if (property.action.IsPressed() && Time.time >= nextTime) { nextTime = Time.time + brushButtonHoldRate; return true; }
         return false;
     }
 
@@ -467,18 +409,11 @@ public class GameManager : MonoBehaviour
     void UpdateLaser(bool pressed)
     {
         if (!laserLine) return;
-
         Transform controller = GetRightController();
-
-        if (!controller)
-        {
-            laserLine.enabled = false;
-            return;
-        }
+        if (!controller) { laserLine.enabled = false; return; }
 
         Vector3 direction = Quaternion.AngleAxis(rayDownAngle, controller.right) * controller.forward;
         Ray ray = new Ray(controller.position, direction);
-
         int mask = 1 << LayerMask.NameToLayer("Terrain");
         if (mask == 0) mask = -1;
 
@@ -489,43 +424,24 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        if (currentMode == ToolMode.Water)
-        {
-            laserLine.enabled = false;
-            UpdateBrushHint(Vector3.zero, false);
-            return;
-        }
-
-        if (currentMode == ToolMode.Placement)
-        {
-            DrawBrushIndicator(hit.point, placementIndicatorRadius);
-            return;
-        }
-
+        if (currentMode == ToolMode.Water) { laserLine.enabled = false; UpdateBrushHint(Vector3.zero, false); return; }
+        if (currentMode == ToolMode.Placement) { DrawBrushIndicator(hit.point, placementIndicatorRadius); return; }
         DrawBrushIndicator(hit.point);
     }
 
     void DrawBrushIndicator(Vector3 center, float radius = -1f)
     {
         Terrain terrain = targetTerrain;
-
-        if (!terrain)
-        {
-            laserLine.enabled = false;
-            return;
-        }
+        if (!terrain) { laserLine.enabled = false; return; }
 
         const int segments = 48;
         const float heightOffset = 0.1f;
-        const float lineWidth = 2f;
-
         laserLine.enabled = true;
         laserLine.useWorldSpace = true;
         laserLine.loop = true;
         laserLine.positionCount = segments;
-        laserLine.widthMultiplier = lineWidth;
+        laserLine.widthMultiplier = 2f;
 
-        
         Color ringColor = currentMode switch
         {
             ToolMode.Dig => digRingColor,
@@ -539,39 +455,26 @@ public class GameManager : MonoBehaviour
         laserLine.endColor = ringColor;
 
         float indicatorRadius = radius > 0f ? radius : brushSize;
-
         for (int i = 0; i < segments; i++)
         {
             float angle = i / (float)segments * Mathf.PI * 2f;
-
             float x = center.x + Mathf.Cos(angle) * indicatorRadius;
             float z = center.z + Mathf.Sin(angle) * indicatorRadius;
-
             Vector3 position = new Vector3(x, 0f, z);
-
             float terrainHeight = terrain.SampleHeight(position) + terrain.transform.position.y;
-
             position.y = terrainHeight + heightOffset;
-
             laserLine.SetPosition(i, position);
         }
-
         UpdateBrushHint(center, true);
     }
 
-    
     Transform GetRightController()
     {
         if (rightController && rightController.gameObject.activeInHierarchy && (rightController.name == "RightHand Controller" || rightController.name == "Right Controller")) return rightController;
-
         rightController = null;
         foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude))
         {
-            if (t.name == "RightHand Controller" || t.name == "Right Controller")
-            {
-                rightController = t;
-                break;
-            }
+            if (t.name == "RightHand Controller" || t.name == "Right Controller") { rightController = t; break; }
         }
         return rightController;
     }
@@ -583,19 +486,8 @@ public class GameManager : MonoBehaviour
         if (uiActive)
         {
             Camera cam = Camera.main;
-            if (cam)
-            {
-                uiRoot.transform.SetParent(cam.transform, false);
-                uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance);
-                uiRoot.transform.localRotation = Quaternion.identity;
-                uiRoot.transform.localScale = uiScale;
-            }
-            else
-            {
-                uiRoot.transform.SetParent(null);
-                uiRoot.transform.position = new Vector3(0, 2, 1.5f);
-                uiRoot.transform.LookAt(Vector3.zero);
-            }
+            if (cam) { uiRoot.transform.SetParent(cam.transform, false); uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance); uiRoot.transform.localRotation = Quaternion.identity; uiRoot.transform.localScale = uiScale; }
+            else { uiRoot.transform.SetParent(null); uiRoot.transform.position = new Vector3(0, 2, 1.5f); uiRoot.transform.LookAt(Vector3.zero); }
             uiRoot.SetActive(true);
         }
         else { uiRoot.SetActive(false); uiRoot.transform.SetParent(null); }
@@ -612,34 +504,29 @@ public class GameManager : MonoBehaviour
             if (hit.collider.GetComponent<Terrain>()) PerformAction(hit.point);
     }
 
-    void ApplyDeformTool(
-    Vector3 worldPos,
-    float signedStrength,
-    int particleCount,
-    float particleSize,
-    float particleForce)
+    void ApplyDeformTool(Vector3 worldPos, float signedStrength, int particleCount, float particleSize, float particleForce)
     {
-        activeTerrainAction.Record(
-            targetTerrain,
-            worldPos,
-            brushSize,
-            () => DeformTerrain(worldPos, signedStrength)
-        );
-
-        SpawnPhysicsParticles(
-            worldPos,
-            new Color(0.77f, 0.64f, 0.52f),
-            particleCount,
-            particleSize,
-            1.5f,
-            particleForce
-        );
+        activeTerrainAction.Record(targetTerrain, worldPos, brushSize, () => DeformTerrain(worldPos, signedStrength));
+        SpawnPhysicsParticles(worldPos, new Color(0.77f, 0.64f, 0.52f), particleCount, particleSize, 1.5f, particleForce);
     }
 
     void DeformTerrain(Vector3 worldPos, float signedStrength)
     {
         TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize, minTerrainHeight, maxTerrainHeight, smoothingStrength);
         PaintTerrainByHeight(worldPos);
+    }
+
+    RectInt GetAlphaBoundsForPaint(Vector3 worldPos, float brushSize)
+    {
+        TerrainData data = targetTerrain.terrainData;
+        Vector3 lp = worldPos - targetTerrain.transform.position;
+        int w = data.alphamapWidth, h = data.alphamapHeight;
+        int cx = Mathf.RoundToInt(lp.x / data.size.x * (w - 1));
+        int cy = Mathf.RoundToInt(lp.z / data.size.z * (h - 1));
+        int rad = Mathf.Clamp(Mathf.CeilToInt(brushSize / data.size.x * w), 1, 50);
+        int x0 = Mathf.Max(0, cx - rad), x1 = Mathf.Min(w - 1, cx + rad);
+        int y0 = Mathf.Max(0, cy - rad), y1 = Mathf.Min(h - 1, cy + rad);
+        return new RectInt(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
     }
 
     void PerformAction(Vector3 worldPos)
@@ -653,42 +540,42 @@ public class GameManager : MonoBehaviour
                 ApplyDeformTool(worldPos, strength * Time.deltaTime, raiseParticleCount, raiseParticleSize, raiseParticleForce);
                 break;
             case ToolMode.Paint:
-                activePaintAction.Record(targetTerrain, worldPos, brushSize, () => TerrainDeformer.PaintTexture(targetTerrain, worldPos, brushSize, paintStrength, paintLayer));
-                SpawnPhysicsParticles(worldPos, Random.ColorHSV(0f, 1f, 0.7f, 1f, 0.8f, 1f), paintParticleCount, paintParticleSize, 2f, paintParticleForce);
-                break;
-            case ToolMode.Water:
-            {
-                CompleteActiveActions();
-                List<WaterState> before = CaptureWaterStates();
-                PourWater(worldPos);
-                List<WaterState> after = CaptureWaterStates();
-                if (!WaterStatesEqual(before, after))
                 {
-                    actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+                    Vector3 wp = worldPos;
+                    activeTerrainAction.Record(targetTerrain, wp, brushSize, () =>
+                    {
+                        TerrainData data = targetTerrain.terrainData;
+                        RectInt bounds = GetAlphaBoundsForPaint(wp, brushSize);
+                        float[,,] oldAlphas = data.GetAlphamaps(bounds.x, bounds.y, bounds.width, bounds.height);
+                        TerrainDeformer.PaintTexture(targetTerrain, wp, brushSize, paintStrength, paintLayer);
+                        float[,,] newAlphas = data.GetAlphamaps(bounds.x, bounds.y, bounds.width, bounds.height);
+                        TerrainMaterialShaper.ApplyAlphaHeightDelta(targetTerrain, bounds, oldAlphas, newAlphas, materialLibrary.profiles);
+                    });
+                    SpawnPhysicsParticles(wp, Random.ColorHSV(0f, 1f, 0.7f, 1f, 0.8f, 1f), paintParticleCount, paintParticleSize, 2f, paintParticleForce);
+                    break;
                 }
-                SpawnPhysicsParticles(worldPos, new Color(0.3f, 0.5f, 1f), waterParticleCount, waterParticleSize, 3f, waterParticleForce);
-                break;
-            }
+            case ToolMode.Water:
+                {
+                    CompleteActiveActions();
+                    List<WaterState> before = CaptureWaterStates();
+                    PourWater(worldPos);
+                    List<WaterState> after = CaptureWaterStates();
+                    if (!WaterStatesEqual(before, after)) actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+                    SpawnPhysicsParticles(worldPos, new Color(0.3f, 0.5f, 1f), waterParticleCount, waterParticleSize, 3f, waterParticleForce);
+                    break;
+                }
             case ToolMode.Placement:
                 PlaceObject(worldPos);
                 break;
         }
     }
 
-    
     void PlaceObject(Vector3 worldPos)
     {
-        if (!placementPrefab)
-        {
-            Debug.LogWarning("Для размещения назначь модель в поле Placement Prefab.");
-            return;
-        }
-
+        if (!placementPrefab) { Debug.LogWarning("Назначьте Placement Prefab."); return; }
         CompleteActiveActions();
-
         GameObject instance = Instantiate(placementPrefab, worldPos, placementPrefab.transform.rotation);
         instance.transform.localScale = placementScale;
-
         Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
         if (renderers.Length > 0)
         {
@@ -696,276 +583,118 @@ public class GameManager : MonoBehaviour
             foreach (Renderer renderer in renderers) bounds.Encapsulate(renderer.bounds);
             instance.transform.position += Vector3.up * (worldPos.y - bounds.min.y);
         }
-
         instance.transform.position += Vector3.down * placementSink;
         actionHistory.Add(new PlacementAction(placementPrefab, instance));
     }
 
-
+    // =========================================================
+    // НОВАЯ СИСТЕМА ВОДЫ (Grid / Mask)
+    // =========================================================
     void PourWater(Vector3 clickPoint)
     {
         if (!targetTerrain) return;
-        float clickHeight = targetTerrain.SampleHeight(clickPoint);
-        int rays = Mathf.Max(waterBoundaryRays, 64);
-        float maxR = 50f, step = 0.05f;
-        float[] maxHeights = new float[rays];
-        List<Vector3> contour = new List<Vector3>();
 
-        for (int i = 0; i < rays; i++)
+        // Рекомендую gridStep: 0.25f. На 0.05f генерация будет тормозить из-за огромного числа полигонов!
+        var result = WaterGenerator.Generate(targetTerrain, clickPoint, gridStep: 0.1f, maxRadius: 15f);
+
+        if (!result.success) return;
+
+        float terrainHeightAtClick = targetTerrain.SampleHeight(clickPoint) + targetTerrain.transform.position.y;
+        if (result.waterLevel - terrainHeightAtClick < waterMinDepth) return;
+
+        // Добавляем расширение маски (Dilation), чтобы вода зашла под стенки
+        int w = result.mask.GetLength(0);
+        int h = result.mask.GetLength(1);
+        bool[,] dilatedMask = new bool[w, h];
+
+        for (int y = 0; y < h; y++)
         {
-            float angle = i * Mathf.PI * 2f / rays;
-            Vector3 dir = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
-            float maxH = clickHeight;
-            for (float d = 0; d < maxR; d += step * 4)
+            for (int x = 0; x < w; x++)
             {
-                float h = targetTerrain.SampleHeight(clickPoint + dir * d);
-                if (h > maxH) maxH = h;
-            }
-            maxHeights[i] = maxH;
-        }
-
-        float overflow = Mathf.Min(maxHeights);
-        float waterLevel = overflow - waterEdgeOffset;
-        if (waterLevel - clickHeight < 0.15f) return;
-
-        for (int i = 0; i < rays; i++)
-        {
-            float angle = i * Mathf.PI * 2f / rays;
-            Vector3 dir = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
-            float prevDist = 0, prevHeight = clickHeight, dist = 0;
-            bool found = false;
-            while (dist < maxR)
-            {
-                Vector3 p = clickPoint + dir * dist;
-                float h = targetTerrain.SampleHeight(p);
-                if (h >= waterLevel)
-                {
-                    float t = (Mathf.Abs(h - prevHeight) > 0.0001f) ? (waterLevel - prevHeight) / (h - prevHeight) : 0;
-                    Vector3 cp = clickPoint + dir * (prevDist + t * (dist - prevDist));
-                    cp.y = waterLevel;
-                    contour.Add(cp);
-                    found = true;
-                    break;
-                }
-                prevDist = dist; prevHeight = h;
-                dist += step;
-            }
-            if (!found)
-            {
-                Vector3 fp = clickPoint + dir * maxR;
-                fp.y = waterLevel;
-                contour.Add(fp);
+                if (!result.mask[x, y]) continue;
+                dilatedMask[x, y] = true;
+                // Расширяем на 1 клетку во все стороны
+                if (x > 0) dilatedMask[x - 1, y] = true;
+                if (x < w - 1) dilatedMask[x + 1, y] = true;
+                if (y > 0) dilatedMask[x, y - 1] = true;
+                if (y < h - 1) dilatedMask[x, y + 1] = true;
             }
         }
 
-        if (contour.Count < 3) return;
-        Vector3 center = new Vector3(clickPoint.x, waterLevel, clickPoint.z);
-        Vector3[] contourPoints = contour.ToArray();
-        RemoveOverlappingWater(contourPoints);
+        Vector3 center = new Vector3(clickPoint.x, result.waterLevel, clickPoint.z);
+
+        RemoveOverlappingWater(center);
+
         ProceduralWaterMesh water = Instantiate(waterPrefab, center, Quaternion.identity);
-        water.transform.localScale = Vector3.one;
-        water.BuildFromBoundary(center, contourPoints, waterLevel);
-        WaterState state = new WaterState(center, contourPoints, waterLevel);
+        water.BuildFromMask(dilatedMask, result.origin, result.cellSize, result.cellSize, result.waterLevel);
+
+        WaterState state = new WaterState(center, result.waterLevel, dilatedMask, result.origin, result.cellSize, result.cellSize);
         waterHistory.Add(new WaterRecord(water, state));
     }
 
-    void RemoveOverlappingWater(Vector3[] newContour)
+
+
+
+    void RemoveOverlappingWater(Vector3 newCenter)
     {
         for (int i = waterHistory.Count - 1; i >= 0; i--)
         {
             WaterRecord record = waterHistory[i];
-
-            if (record.water == null)
+            if (record.water == null) { waterHistory.RemoveAt(i); continue; }
+            if (Vector3.Distance(record.state.center, newCenter) < 10f)
             {
+                Destroy(record.water.gameObject);
                 waterHistory.RemoveAt(i);
-                continue;
-            }
-
-            if (record.state == null || !WaterContoursOverlap(record.state.contour, newContour))
-            {
-                continue;
-            }
-
-            Destroy(record.water.gameObject);
-            waterHistory.RemoveAt(i);
-        }
-    }
-
-    static bool WaterContoursOverlap(Vector3[] first, Vector3[] second)
-    {
-        if (first == null || second == null || first.Length < 3 || second.Length < 3)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < first.Length; i++)
-        {
-            Vector3 a = first[i];
-            Vector3 b = first[(i + 1) % first.Length];
-
-            for (int j = 0; j < second.Length; j++)
-            {
-                Vector3 c = second[j];
-                Vector3 d = second[(j + 1) % second.Length];
-
-                if (SegmentsIntersectXZ(a, b, c, d))
-                    return true;
             }
         }
-
-        return IsPointInsideContour(first[0], second) || IsPointInsideContour(second[0], first);
-    }
-
-    static bool SegmentsIntersectXZ(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
-    {
-        const float epsilon = 0.0001f;
-
-        float abC = CrossXZ(a, b, c);
-        float abD = CrossXZ(a, b, d);
-        float cdA = CrossXZ(c, d, a);
-        float cdB = CrossXZ(c, d, b);
-
-        bool crossesAB = (abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon);
-        bool crossesCD = (cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon);
-
-        if (crossesAB && crossesCD)
-            return true;
-
-        return (Mathf.Abs(abC) <= epsilon && OnSegmentXZ(a, b, c, epsilon)) ||
-            (Mathf.Abs(abD) <= epsilon && OnSegmentXZ(a, b, d, epsilon)) ||
-            (Mathf.Abs(cdA) <= epsilon && OnSegmentXZ(c, d, a, epsilon)) ||
-            (Mathf.Abs(cdB) <= epsilon && OnSegmentXZ(c, d, b, epsilon));
-    }
-
-    static float CrossXZ(Vector3 a, Vector3 b, Vector3 c)
-    {
-        return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
-    }
-
-    static bool OnSegmentXZ(Vector3 a, Vector3 b, Vector3 point, float epsilon)
-    {
-        return point.x >= Mathf.Min(a.x, b.x) - epsilon &&
-            point.x <= Mathf.Max(a.x, b.x) + epsilon &&
-            point.z >= Mathf.Min(a.z, b.z) - epsilon &&
-            point.z <= Mathf.Max(a.z, b.z) + epsilon;
-    }
-
-    static bool IsPointInsideContour(Vector3 point, Vector3[] contour)
-    {
-        bool inside = false;
-
-        for (int i = 0, j = contour.Length - 1; i < contour.Length; j = i++)
-        {
-            Vector3 a = contour[i];
-            Vector3 b = contour[j];
-
-            bool crosses = (a.z > point.z) != (b.z > point.z) &&
-                        point.x < (b.x - a.x) *
-                        (point.z - a.z) / (b.z - a.z) + a.x;
-
-            if (crosses)
-                inside = !inside;
-        }
-
-        return inside;
     }
 
     void ClearAllWater()
     {
         List<WaterState> before = CaptureWaterStates();
-
-        if (before.Count == 0)
-            return;
+        if (before.Count == 0) return;
 
         foreach (WaterRecord record in waterHistory)
-        {
-            if (record.water != null)
-                Destroy(record.water.gameObject);
-        }
+            if (record.water != null) Destroy(record.water.gameObject);
 
         waterHistory.Clear();
-
         List<WaterState> after = CaptureWaterStates();
-
         actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
     }
 
     List<WaterState> CaptureWaterStates()
     {
         List<WaterState> states = new();
-
         for (int i = waterHistory.Count - 1; i >= 0; i--)
         {
             WaterRecord record = waterHistory[i];
-
-            if (record.water == null)
-            {
-                waterHistory.RemoveAt(i);
-                continue;
-            }
-
+            if (record.water == null) { waterHistory.RemoveAt(i); continue; }
             states.Add(record.state.Clone());
         }
-
         states.Reverse();
         return states;
     }
 
-    bool WaterStatesEqual(
-    IReadOnlyList<WaterState> first,
-    IReadOnlyList<WaterState> second)
+    bool WaterStatesEqual(IReadOnlyList<WaterState> first, IReadOnlyList<WaterState> second)
     {
-        if (first.Count != second.Count)
-            return false;
-
+        if (first.Count != second.Count) return false;
         for (int i = 0; i < first.Count; i++)
         {
-            WaterState a = first[i];
-            WaterState b = second[i];
-
-            if (a.center != b.center)
-                return false;
-
-            if (!Mathf.Approximately(a.waterLevel, b.waterLevel))
-            {
-                return false;
-            }
-
-            if (a.contour.Length != b.contour.Length)
-            {
-                return false;
-            }
-
-            for (int j = 0; j < a.contour.Length; j++)
-            {
-                if (a.contour[j] != b.contour[j])
-                {
-                    return false;
-                }
-            }
+            if (first[i].center != second[i].center || !Mathf.Approximately(first[i].waterLevel, second[i].waterLevel)) return false;
         }
-
         return true;
     }
 
-    void RestoreWaterStates(
-        IReadOnlyList<WaterState> states)
+    void RestoreWaterStates(IReadOnlyList<WaterState> states)
     {
         foreach (WaterRecord record in waterHistory)
-        {
-            if (record.water != null)
-                Destroy(record.water.gameObject);
-        }
-
+            if (record.water != null) Destroy(record.water.gameObject);
         waterHistory.Clear();
 
         foreach (WaterState state in states)
         {
             ProceduralWaterMesh water = Instantiate(waterPrefab, state.center, Quaternion.identity);
-
-            water.transform.localScale = Vector3.one;
-            water.BuildFromBoundary(state.center, state.contour, state.waterLevel);
-
+            water.BuildFromMask(state.mask, state.worldOrigin, state.cellSizeX, state.cellSizeZ, state.waterLevel);
             waterHistory.Add(new WaterRecord(water, state.Clone()));
         }
     }
@@ -992,8 +721,8 @@ public class GameManager : MonoBehaviour
     {
         if (!targetTerrain) return;
         TerrainData data = targetTerrain.terrainData;
-        int w = data.alphamapWidth, h = data.alphamapHeight;
         Vector3 lp = worldPos - targetTerrain.transform.position;
+        int w = data.alphamapWidth, h = data.alphamapHeight;
         int cx = Mathf.RoundToInt(lp.x / data.size.x * (w - 1));
         int cy = Mathf.RoundToInt(lp.z / data.size.z * (h - 1));
         int rad = Mathf.Clamp(Mathf.CeilToInt(brushSize / data.size.x * w), 1, 50);
@@ -1001,17 +730,34 @@ public class GameManager : MonoBehaviour
         int y0 = Mathf.Max(0, cy - rad), y1 = Mathf.Min(h - 1, cy + rad);
         int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
         if (bw <= 0 || bh <= 0) return;
+
         float[,,] alphas = data.GetAlphamaps(x0, y0, bw, bh);
         float[,] heights = data.GetHeights(x0, y0, bw, bh);
+
         float rockRel = rockHeight / data.size.y;
         float soilRel = soilHeight / data.size.y;
+        float blendRange = 5f / data.size.y;
+
         for (int y = 0; y < bh; y++)
         {
             for (int x = 0; x < bw; x++)
             {
                 float hgt = heights[y, x];
-                int layer = hgt < rockRel ? rockLayerIndex : (hgt < soilRel ? soilLayerIndex : grassLayerIndex);
-                for (int l = 0; l < data.alphamapLayers; l++) alphas[y, x, l] = (l == layer) ? 1f : 0f;
+                float wRock = 0f, wSoil = 0f, wGrass = 0f;
+
+                if (hgt <= rockRel - blendRange) wRock = 1f;
+                else if (hgt < rockRel + blendRange) { float t = (hgt - (rockRel - blendRange)) / (blendRange * 2f); wRock = 1f - t; wSoil = t; }
+                else if (hgt <= soilRel - blendRange) wSoil = 1f;
+                else if (hgt < soilRel + blendRange) { float t = (hgt - (soilRel - blendRange)) / (blendRange * 2f); wSoil = 1f - t; wGrass = t; }
+                else wGrass = 1f;
+
+                for (int l = 0; l < data.alphamapLayers; l++)
+                {
+                    if (l == rockLayerIndex) alphas[y, x, l] = wRock;
+                    else if (l == soilLayerIndex) alphas[y, x, l] = wSoil;
+                    else if (l == grassLayerIndex) alphas[y, x, l] = wGrass;
+                    else alphas[y, x, l] = 0f;
+                }
             }
         }
         data.SetAlphamaps(x0, y0, alphas);
@@ -1029,17 +775,8 @@ public class GameManager : MonoBehaviour
         if (activeTerrainAction != null)
         {
             activeTerrainAction.Complete();
-            if (activeTerrainAction.HasChanges)
-                actionHistory.Add(activeTerrainAction);
+            if (activeTerrainAction.HasChanges) actionHistory.Add(activeTerrainAction);
             activeTerrainAction = null;
-        }
-
-        if (activePaintAction != null)
-        {
-            activePaintAction.Complete();
-            if (activePaintAction.HasChanges)
-                actionHistory.Add(activePaintAction);
-            activePaintAction = null;
         }
     }
 
@@ -1140,7 +877,7 @@ public class GameManager : MonoBehaviour
         waterButton.onClick.AddListener(() => currentMode = ToolMode.Water);
         placementButton.onClick.AddListener(() => currentMode = ToolMode.Placement);
 
-        float bigH = 65f, hp = 30f, gap = 10f;
+        float bigH = 65f, hp = 30f;
         float baseY = bm + mbh + 10f;
 
         clearWaterButton = CreateButton("ClearAllWaterBtn", uiRoot.transform, "Удалить всю воду", Vector2.zero, Vector2.zero);
@@ -1276,7 +1013,6 @@ public class GameManager : MonoBehaviour
         bool digRaise = currentMode is ToolMode.Dig or ToolMode.Raise;
         bool paint = currentMode == ToolMode.Paint;
         bool water = currentMode == ToolMode.Water;
-
         bool placement = currentMode == ToolMode.Placement;
 
         if (brushSizeText) brushSizeText.gameObject.SetActive(!water && !placement);

@@ -226,7 +226,7 @@ public static class TerrainDeformer
                 );
 
                 float influence = Mathf.Clamp01(1f - dist / radius);
-                float add = influence * strength * 0.1f;
+                float add = influence * strength * 0.5f; 
                 float sum = 0f;
 
                 for (int l = 0; l < data.alphamapLayers; l++)
