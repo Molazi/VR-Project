@@ -10,6 +10,10 @@ public class GameManager : MonoBehaviour
     // ========== Water ==========
     [Header("Water — Grid System")]
     public ProceduralWaterMesh waterPrefab;
+    public float waterSearchRadius = 100f; // Радиус поиска ямы
+    public float waterGridStep = 1.0f; // Шаг поиска уровня воды
+    public float waterMinDepth = 0.02f;
+    public float waterMeshStep = 0.5f; // Размер ячейки меша (чем меньше, тем плавнее края)
 
     // ========== Tools ==========
     public UIStyleConfig uiStyle;
@@ -551,25 +555,21 @@ public class GameManager : MonoBehaviour
                     break;
                 }
             case ToolMode.Water:
-            {
-                CompleteActiveActions();
-                List<WaterState> before = CaptureWaterStates();
-                PourWater(worldPos);
-                List<WaterState> after = CaptureWaterStates();
-                if (!WaterStatesEqual(before, after))
                 {
-                    actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+                    CompleteActiveActions();
+                    List<WaterState> before = CaptureWaterStates();
+                    PourWater(worldPos);
+                    List<WaterState> after = CaptureWaterStates();
+                    if (!WaterStatesEqual(before, after)) actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+                    SpawnPhysicsParticles(worldPos, new Color(0.3f, 0.5f, 1f), waterParticleCount, waterParticleSize, 3f, waterParticleForce);
+                    break;
                 }
-                SpawnPhysicsParticles(worldPos, new Color(0.3f, 0.5f, 1f), waterParticleCount, waterParticleSize, 3f, waterParticleForce);
-                break;
-            }
             case ToolMode.Placement:
                 PlaceObject(worldPos);
                 break;
         }
     }
 
-    
     void PlaceObject(Vector3 worldPos)
     {
         if (!placementPrefab) { Debug.LogWarning("Назначьте Placement Prefab."); return; }
@@ -587,271 +587,114 @@ public class GameManager : MonoBehaviour
         actionHistory.Add(new PlacementAction(placementPrefab, instance));
     }
 
-
+    // =========================================================
+    // НОВАЯ СИСТЕМА ВОДЫ (Grid / Mask)
+    // =========================================================
     void PourWater(Vector3 clickPoint)
     {
         if (!targetTerrain) return;
-        float clickHeight = targetTerrain.SampleHeight(clickPoint);
-        int rays = Mathf.Max(waterBoundaryRays, 64);
-        float maxR = 50f, step = 0.05f;
-        float[] maxHeights = new float[rays];
-        List<Vector3> contour = new List<Vector3>();
 
-        for (int i = 0; i < rays; i++)
+        // Рекомендую gridStep: 0.25f. На 0.05f генерация будет тормозить из-за огромного числа полигонов!
+        var result = WaterGenerator.Generate(targetTerrain, clickPoint, gridStep: 0.1f, maxRadius: 15f);
+
+        if (!result.success) return;
+
+        float terrainHeightAtClick = targetTerrain.SampleHeight(clickPoint) + targetTerrain.transform.position.y;
+        if (result.waterLevel - terrainHeightAtClick < waterMinDepth) return;
+
+        // Добавляем расширение маски (Dilation), чтобы вода зашла под стенки
+        int w = result.mask.GetLength(0);
+        int h = result.mask.GetLength(1);
+        bool[,] dilatedMask = new bool[w, h];
+
+        for (int y = 0; y < h; y++)
         {
-            float angle = i * Mathf.PI * 2f / rays;
-            Vector3 dir = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
-            float maxH = clickHeight;
-            for (float d = 0; d < maxR; d += step * 4)
+            for (int x = 0; x < w; x++)
             {
-                float h = targetTerrain.SampleHeight(clickPoint + dir * d);
-                if (h > maxH) maxH = h;
-            }
-            maxHeights[i] = maxH;
-        }
-
-        float overflow = Mathf.Min(maxHeights);
-        float waterLevel = overflow - waterEdgeOffset;
-        if (waterLevel - clickHeight < 0.15f) return;
-
-        for (int i = 0; i < rays; i++)
-        {
-            float angle = i * Mathf.PI * 2f / rays;
-            Vector3 dir = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
-            float prevDist = 0, prevHeight = clickHeight, dist = 0;
-            bool found = false;
-            while (dist < maxR)
-            {
-                Vector3 p = clickPoint + dir * dist;
-                float h = targetTerrain.SampleHeight(p);
-                if (h >= waterLevel)
-                {
-                    float t = (Mathf.Abs(h - prevHeight) > 0.0001f) ? (waterLevel - prevHeight) / (h - prevHeight) : 0;
-                    Vector3 cp = clickPoint + dir * (prevDist + t * (dist - prevDist));
-                    cp.y = waterLevel;
-                    contour.Add(cp);
-                    found = true;
-                    break;
-                }
-                prevDist = dist; prevHeight = h;
-                dist += step;
-            }
-            if (!found)
-            {
-                Vector3 fp = clickPoint + dir * maxR;
-                fp.y = waterLevel;
-                contour.Add(fp);
+                if (!result.mask[x, y]) continue;
+                dilatedMask[x, y] = true;
+                // Расширяем на 1 клетку во все стороны
+                if (x > 0) dilatedMask[x - 1, y] = true;
+                if (x < w - 1) dilatedMask[x + 1, y] = true;
+                if (y > 0) dilatedMask[x, y - 1] = true;
+                if (y < h - 1) dilatedMask[x, y + 1] = true;
             }
         }
 
-        if (contour.Count < 3) return;
-        Vector3 center = new Vector3(clickPoint.x, waterLevel, clickPoint.z);
-        Vector3[] contourPoints = contour.ToArray();
-        RemoveOverlappingWater(contourPoints);
+        Vector3 center = new Vector3(clickPoint.x, result.waterLevel, clickPoint.z);
+
+        RemoveOverlappingWater(center);
+
         ProceduralWaterMesh water = Instantiate(waterPrefab, center, Quaternion.identity);
-        water.transform.localScale = Vector3.one;
-        water.BuildFromBoundary(center, contourPoints, waterLevel);
-        WaterState state = new WaterState(center, contourPoints, waterLevel);
+        water.BuildFromMask(dilatedMask, result.origin, result.cellSize, result.cellSize, result.waterLevel);
+
+        WaterState state = new WaterState(center, result.waterLevel, dilatedMask, result.origin, result.cellSize, result.cellSize);
         waterHistory.Add(new WaterRecord(water, state));
     }
 
-    void RemoveOverlappingWater(Vector3[] newContour)
+
+
+
+    void RemoveOverlappingWater(Vector3 newCenter)
     {
         for (int i = waterHistory.Count - 1; i >= 0; i--)
         {
             WaterRecord record = waterHistory[i];
-
-            if (record.water == null)
+            if (record.water == null) { waterHistory.RemoveAt(i); continue; }
+            if (Vector3.Distance(record.state.center, newCenter) < 10f)
             {
+                Destroy(record.water.gameObject);
                 waterHistory.RemoveAt(i);
-                continue;
-            }
-
-            if (record.state == null || !WaterContoursOverlap(record.state.contour, newContour))
-            {
-                continue;
-            }
-
-            Destroy(record.water.gameObject);
-            waterHistory.RemoveAt(i);
-        }
-    }
-
-    static bool WaterContoursOverlap(Vector3[] first, Vector3[] second)
-    {
-        if (first == null || second == null || first.Length < 3 || second.Length < 3)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < first.Length; i++)
-        {
-            Vector3 a = first[i];
-            Vector3 b = first[(i + 1) % first.Length];
-
-            for (int j = 0; j < second.Length; j++)
-            {
-                Vector3 c = second[j];
-                Vector3 d = second[(j + 1) % second.Length];
-
-                if (SegmentsIntersectXZ(a, b, c, d))
-                    return true;
             }
         }
-
-        return IsPointInsideContour(first[0], second) || IsPointInsideContour(second[0], first);
-    }
-
-    static bool SegmentsIntersectXZ(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
-    {
-        const float epsilon = 0.0001f;
-
-        float abC = CrossXZ(a, b, c);
-        float abD = CrossXZ(a, b, d);
-        float cdA = CrossXZ(c, d, a);
-        float cdB = CrossXZ(c, d, b);
-
-        bool crossesAB = (abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon);
-        bool crossesCD = (cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon);
-
-        if (crossesAB && crossesCD)
-            return true;
-
-        return (Mathf.Abs(abC) <= epsilon && OnSegmentXZ(a, b, c, epsilon)) ||
-            (Mathf.Abs(abD) <= epsilon && OnSegmentXZ(a, b, d, epsilon)) ||
-            (Mathf.Abs(cdA) <= epsilon && OnSegmentXZ(c, d, a, epsilon)) ||
-            (Mathf.Abs(cdB) <= epsilon && OnSegmentXZ(c, d, b, epsilon));
-    }
-
-    static float CrossXZ(Vector3 a, Vector3 b, Vector3 c)
-    {
-        return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
-    }
-
-    static bool OnSegmentXZ(Vector3 a, Vector3 b, Vector3 point, float epsilon)
-    {
-        return point.x >= Mathf.Min(a.x, b.x) - epsilon &&
-            point.x <= Mathf.Max(a.x, b.x) + epsilon &&
-            point.z >= Mathf.Min(a.z, b.z) - epsilon &&
-            point.z <= Mathf.Max(a.z, b.z) + epsilon;
-    }
-
-    static bool IsPointInsideContour(Vector3 point, Vector3[] contour)
-    {
-        bool inside = false;
-
-        for (int i = 0, j = contour.Length - 1; i < contour.Length; j = i++)
-        {
-            Vector3 a = contour[i];
-            Vector3 b = contour[j];
-
-            bool crosses = (a.z > point.z) != (b.z > point.z) &&
-                        point.x < (b.x - a.x) *
-                        (point.z - a.z) / (b.z - a.z) + a.x;
-
-            if (crosses)
-                inside = !inside;
-        }
-
-        return inside;
     }
 
     void ClearAllWater()
     {
         List<WaterState> before = CaptureWaterStates();
-
-        if (before.Count == 0)
-            return;
+        if (before.Count == 0) return;
 
         foreach (WaterRecord record in waterHistory)
-        {
-            if (record.water != null)
-                Destroy(record.water.gameObject);
-        }
+            if (record.water != null) Destroy(record.water.gameObject);
 
         waterHistory.Clear();
-
         List<WaterState> after = CaptureWaterStates();
-
         actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
     }
 
     List<WaterState> CaptureWaterStates()
     {
         List<WaterState> states = new();
-
         for (int i = waterHistory.Count - 1; i >= 0; i--)
         {
             WaterRecord record = waterHistory[i];
-
-            if (record.water == null)
-            {
-                waterHistory.RemoveAt(i);
-                continue;
-            }
-
+            if (record.water == null) { waterHistory.RemoveAt(i); continue; }
             states.Add(record.state.Clone());
         }
-
         states.Reverse();
         return states;
     }
 
-    bool WaterStatesEqual(
-    IReadOnlyList<WaterState> first,
-    IReadOnlyList<WaterState> second)
+    bool WaterStatesEqual(IReadOnlyList<WaterState> first, IReadOnlyList<WaterState> second)
     {
-        if (first.Count != second.Count)
-            return false;
-
+        if (first.Count != second.Count) return false;
         for (int i = 0; i < first.Count; i++)
         {
-            WaterState a = first[i];
-            WaterState b = second[i];
-
-            if (a.center != b.center)
-                return false;
-
-            if (!Mathf.Approximately(a.waterLevel, b.waterLevel))
-            {
-                return false;
-            }
-
-            if (a.contour.Length != b.contour.Length)
-            {
-                return false;
-            }
-
-            for (int j = 0; j < a.contour.Length; j++)
-            {
-                if (a.contour[j] != b.contour[j])
-                {
-                    return false;
-                }
-            }
+            if (first[i].center != second[i].center || !Mathf.Approximately(first[i].waterLevel, second[i].waterLevel)) return false;
         }
-
         return true;
     }
 
-    void RestoreWaterStates(
-        IReadOnlyList<WaterState> states)
+    void RestoreWaterStates(IReadOnlyList<WaterState> states)
     {
         foreach (WaterRecord record in waterHistory)
-        {
-            if (record.water != null)
-                Destroy(record.water.gameObject);
-        }
-
+            if (record.water != null) Destroy(record.water.gameObject);
         waterHistory.Clear();
 
         foreach (WaterState state in states)
         {
             ProceduralWaterMesh water = Instantiate(waterPrefab, state.center, Quaternion.identity);
-
-            water.transform.localScale = Vector3.one;
-            water.BuildFromBoundary(state.center, state.contour, state.waterLevel);
-
+            water.BuildFromMask(state.mask, state.worldOrigin, state.cellSizeX, state.cellSizeZ, state.waterLevel);
             waterHistory.Add(new WaterRecord(water, state.Clone()));
         }
     }
@@ -878,8 +721,8 @@ public class GameManager : MonoBehaviour
     {
         if (!targetTerrain) return;
         TerrainData data = targetTerrain.terrainData;
-        int w = data.alphamapWidth, h = data.alphamapHeight;
         Vector3 lp = worldPos - targetTerrain.transform.position;
+        int w = data.alphamapWidth, h = data.alphamapHeight;
         int cx = Mathf.RoundToInt(lp.x / data.size.x * (w - 1));
         int cy = Mathf.RoundToInt(lp.z / data.size.z * (h - 1));
         int rad = Mathf.Clamp(Mathf.CeilToInt(brushSize / data.size.x * w), 1, 50);
@@ -887,17 +730,34 @@ public class GameManager : MonoBehaviour
         int y0 = Mathf.Max(0, cy - rad), y1 = Mathf.Min(h - 1, cy + rad);
         int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
         if (bw <= 0 || bh <= 0) return;
+
         float[,,] alphas = data.GetAlphamaps(x0, y0, bw, bh);
         float[,] heights = data.GetHeights(x0, y0, bw, bh);
+
         float rockRel = rockHeight / data.size.y;
         float soilRel = soilHeight / data.size.y;
+        float blendRange = 5f / data.size.y;
+
         for (int y = 0; y < bh; y++)
         {
             for (int x = 0; x < bw; x++)
             {
                 float hgt = heights[y, x];
-                int layer = hgt < rockRel ? rockLayerIndex : (hgt < soilRel ? soilLayerIndex : grassLayerIndex);
-                for (int l = 0; l < data.alphamapLayers; l++) alphas[y, x, l] = (l == layer) ? 1f : 0f;
+                float wRock = 0f, wSoil = 0f, wGrass = 0f;
+
+                if (hgt <= rockRel - blendRange) wRock = 1f;
+                else if (hgt < rockRel + blendRange) { float t = (hgt - (rockRel - blendRange)) / (blendRange * 2f); wRock = 1f - t; wSoil = t; }
+                else if (hgt <= soilRel - blendRange) wSoil = 1f;
+                else if (hgt < soilRel + blendRange) { float t = (hgt - (soilRel - blendRange)) / (blendRange * 2f); wSoil = 1f - t; wGrass = t; }
+                else wGrass = 1f;
+
+                for (int l = 0; l < data.alphamapLayers; l++)
+                {
+                    if (l == rockLayerIndex) alphas[y, x, l] = wRock;
+                    else if (l == soilLayerIndex) alphas[y, x, l] = wSoil;
+                    else if (l == grassLayerIndex) alphas[y, x, l] = wGrass;
+                    else alphas[y, x, l] = 0f;
+                }
             }
         }
         data.SetAlphamaps(x0, y0, alphas);
@@ -915,17 +775,8 @@ public class GameManager : MonoBehaviour
         if (activeTerrainAction != null)
         {
             activeTerrainAction.Complete();
-            if (activeTerrainAction.HasChanges)
-                actionHistory.Add(activeTerrainAction);
+            if (activeTerrainAction.HasChanges) actionHistory.Add(activeTerrainAction);
             activeTerrainAction = null;
-        }
-
-        if (activePaintAction != null)
-        {
-            activePaintAction.Complete();
-            if (activePaintAction.HasChanges)
-                actionHistory.Add(activePaintAction);
-            activePaintAction = null;
         }
     }
 
@@ -1026,7 +877,7 @@ public class GameManager : MonoBehaviour
         waterButton.onClick.AddListener(() => currentMode = ToolMode.Water);
         placementButton.onClick.AddListener(() => currentMode = ToolMode.Placement);
 
-        float bigH = 65f, hp = 30f, gap = 10f;
+        float bigH = 65f, hp = 30f;
         float baseY = bm + mbh + 10f;
 
         clearWaterButton = CreateButton("ClearAllWaterBtn", uiRoot.transform, "Удалить всю воду", Vector2.zero, Vector2.zero);
@@ -1162,7 +1013,6 @@ public class GameManager : MonoBehaviour
         bool digRaise = currentMode is ToolMode.Dig or ToolMode.Raise;
         bool paint = currentMode == ToolMode.Paint;
         bool water = currentMode == ToolMode.Water;
-
         bool placement = currentMode == ToolMode.Placement;
 
         if (brushSizeText) brushSizeText.gameObject.SetActive(!water && !placement);
