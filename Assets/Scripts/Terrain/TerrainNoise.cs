@@ -36,6 +36,8 @@ public static class TerrainNoise
             freq *= p.lacunarity;
         }
 
-        return norm > 0f ? sum / norm : 0f;
+                // ИСПРАВЛЕНИЕ: Центрируем шум, чтобы он давал и впадины, и бугры
+        float result = norm > 0f ? sum / norm : 0f;
+        return (result - 0.5f) * 2f; // Теперь от -1 до +1
     }
 }
