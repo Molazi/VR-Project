@@ -99,6 +99,9 @@ public class GameManager : MonoBehaviour
     private TMP_Text paintLayerText;
     private TMP_Text paintStrengthText;
     private Button digButton, raiseButton, paintButton, waterButton, placementButton;
+    private Button undoButton, redoButton;
+    private TMP_Text waterRadiusText;
+    private Slider waterRadiusSlider;
     private ToolMode lastHighlightMode = (ToolMode)(-1);
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
     private Button prevLayerButton, nextLayerButton;
