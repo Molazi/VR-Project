@@ -156,7 +156,7 @@ public class GameManager : MonoBehaviour
         if (materialLibrary == null || materialLibrary.profiles == null || materialLibrary.profiles.Count == 0)
             materialLibrary = MaterialProfileLibrary.CreateDefault();
 
-        if (targetTerrain != null) materialLibrary.ApplyAllToTerrain(targetTerrain);
+          // if (targetTerrain != null) materialLibrary.ApplyAllToTerrain(targetTerrain); принудительная перезапись параметров слоев
 
         CreateUI();
         if (uiRoot != null) uiRoot.SetActive(false);

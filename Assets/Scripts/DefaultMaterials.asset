@@ -17,9 +17,9 @@ MonoBehaviour:
     - name: "\u0422\u0440\u0430\u0432\u0430"
       description: "\u0421\u043B\u0430\u0431\u044B\u0435 \u0432\u044B\u0441\u043E\u043A\u043E\u0447\u0430\u0441\u0442\u043E\u0442\u043D\u044B\u0435
         \u0431\u0443\u0433\u043E\u0440\u043A\u0438."
-      diffuseTexture: {fileID: 2800000, guid: 0b6c444d13ed153479011a14e45cfa24, type: 3}
-      normalMapTexture: {fileID: 2800000, guid: 0ed30fac3bd6bcb4b871f6c8d1833808, type: 3}
-      tileSize: {x: 20, y: 20}
+      diffuseTexture: {fileID: 2800000, guid: 8d38408652a91a549ad06164ec9f74ca, type: 3}
+      normalMapTexture: {fileID: 2800000, guid: 64a668b993f05a44d81dad3299580617, type: 3}
+      tileSize: {x: 10, y: 10}
       tileOffset: {x: 0, y: 0}
       smoothness: 0.25
       metallic: 0
@@ -28,6 +28,7 @@ MonoBehaviour:
       noiseType: 0
       amplitude: 0.15
       frequency: 0.35
+      noiseScale: {x: 1, y: 1}
       seed: 44
       octaves: 3
       lacunarity: 2.2
@@ -36,8 +37,8 @@ MonoBehaviour:
     - name: "\u0417\u0435\u043C\u043B\u044F"
       description: "\u041D\u0435\u0431\u043E\u043B\u044C\u0448\u0438\u0435 \u043D\u0435\u0440\u043E\u0432\u043D\u043E\u0441\u0442\u0438
         \u0441\u0440\u0435\u0434\u043D\u0435\u0439 \u0447\u0430\u0441\u0442\u043E\u0442\u044B."
-      diffuseTexture: {fileID: 2800000, guid: 7c61c5b95e07eea4e82b324a3b83e838, type: 3}
-      normalMapTexture: {fileID: 2800000, guid: 14dab577eea927a43bc3dd4131089312, type: 3}
+      diffuseTexture: {fileID: 2800000, guid: b29afc39cae886b4ca1931cdb9f5e068, type: 3}
+      normalMapTexture: {fileID: 2800000, guid: d607b1319cf3627478fb652f952fd41f, type: 3}
       tileSize: {x: 15, y: 15}
       tileOffset: {x: 0, y: 0}
       smoothness: 0.2
@@ -47,6 +48,7 @@ MonoBehaviour:
       noiseType: 0
       amplitude: 0.25
       frequency: 0.15
+      noiseScale: {x: 1, y: 1}
       seed: 33
       octaves: 4
       lacunarity: 2
@@ -56,7 +58,7 @@ MonoBehaviour:
       description: "\u0416\u0451\u0441\u0442\u043A\u0438\u0439, \u0440\u0432\u0430\u043D\u044B\u0439
         \u0440\u0435\u043B\u044C\u0435\u0444. Ridged-\u0448\u0443\u043C \u0441 \u0432\u044B\u0441\u043E\u043A\u043E\u0439
         \u0430\u043C\u043F\u043B\u0438\u0442\u0443\u0434\u043E\u0439."
-      diffuseTexture: {fileID: 2800000, guid: 7b22d0e45c5f87c4eb0b9ed9f7793f5e, type: 3}
+      diffuseTexture: {fileID: 2800000, guid: 07baef80bd4beb64ba80aa3897d6dde1, type: 3}
       normalMapTexture: {fileID: 2800000, guid: a0cac295b66d6454488fd53dc5337c7f, type: 3}
       tileSize: {x: 10, y: 10}
       tileOffset: {x: 0, y: 0}
@@ -67,6 +69,7 @@ MonoBehaviour:
       noiseType: 1
       amplitude: 0.85
       frequency: 0.12
+      noiseScale: {x: 1, y: 1}
       seed: 11
       octaves: 5
       lacunarity: 2.1
@@ -75,8 +78,8 @@ MonoBehaviour:
     - name: "\u041F\u0435\u0441\u043E\u043A"
       description: "\u041F\u043B\u0430\u0432\u043D\u044B\u0435 \u0432\u043E\u043B\u043D\u044B,
         \u043D\u0438\u0437\u043A\u0430\u044F \u0430\u043C\u043F\u043B\u0438\u0442\u0443\u0434\u0430."
-      diffuseTexture: {fileID: 2800000, guid: 23f37632d525afe46b6eb6117bc04e2a, type: 3}
-      normalMapTexture: {fileID: 2800000, guid: d01bfef8410e7824a85ae141a975069a, type: 3}
+      diffuseTexture: {fileID: 2800000, guid: 57c3d6d1fd510a644abd02c9594f8cbd, type: 3}
+      normalMapTexture: {fileID: 2800000, guid: 5183b7ef5fa2ba144b0776eb38d8a9ce, type: 3}
       tileSize: {x: 25, y: 25}
       tileOffset: {x: 0, y: 0}
       smoothness: 0.4
@@ -86,6 +89,7 @@ MonoBehaviour:
       noiseType: 0
       amplitude: 0.1
       frequency: 0.04
+      noiseScale: {x: 1, y: 1}
       seed: 22
       octaves: 3
       lacunarity: 2
