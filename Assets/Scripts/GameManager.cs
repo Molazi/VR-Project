@@ -401,7 +401,7 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            strength = Mathf.Clamp(strength + delta, 0.001f, 0.05f);
+            strength = Mathf.Clamp(strength + delta, 0.01f, 0.5f);
             if (strengthSlider) strengthSlider.SetValueWithoutNotify(strength);
         }
     }
@@ -513,7 +513,7 @@ public class GameManager : MonoBehaviour
     void DeformTerrain(Vector3 worldPos, float signedStrength)
     {
         TerrainDeformer.Deform(targetTerrain, worldPos, signedStrength, brushSize, minTerrainHeight, maxTerrainHeight, smoothingStrength);
-        PaintTerrainByHeight(worldPos);
+         // PaintTerrainByHeight(worldPos);
     }
 
     RectInt GetAlphaBoundsForPaint(Vector3 worldPos, float brushSize)
@@ -824,7 +824,7 @@ public class GameManager : MonoBehaviour
         strengthText.rectTransform.sizeDelta = new Vector2(250, lh);
         strengthTextOrigPos = strengthText.rectTransform.anchoredPosition;
         yPos -= lh + 8;
-        strengthSlider = CreateSlider("StrengthSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.001f, 0.05f, strength);
+        strengthSlider = CreateSlider("StrengthSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.01f, 0.8f, strength);
         strengthSlider.onValueChanged.AddListener(v => strength = v);
         strengthSliderOrigPos = strengthSlider.GetComponent<RectTransform>().anchoredPosition;
         yPos -= sh + rs;
