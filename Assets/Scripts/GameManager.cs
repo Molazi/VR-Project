@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -20,7 +20,7 @@ public class GameManager : MonoBehaviour
     public float maxDistance = 80f;
     public enum ToolMode { Dig, Raise, Paint, Water, Placement }
     public ToolMode currentMode = ToolMode.Dig;
-    public float strength = 0.8f;
+    public float strength = 0.02f;
     public float brushSize = 2.5f;
     public float smoothingStrength = 0.3f;
     public float minTerrainHeight = 10f;
@@ -94,16 +94,27 @@ public class GameManager : MonoBehaviour
     // ========== UI ==========
     private GameObject uiRoot;
     private bool uiActive = false;
-    private TMP_Text modeText;
     private TMP_Text strengthText;
     private TMP_Text brushSizeText;
     private TMP_Text paintLayerText;
     private TMP_Text paintStrengthText;
-    private Button digButton, raiseButton, paintButton, waterButton, placementButton;
-    private ToolMode lastHighlightMode = (ToolMode)(-1);
+    private Button digButton, raiseButton, paintButton, waterButton;
     private Slider strengthSlider, brushSizeSlider, paintStrengthSlider;
-    private Button prevLayerButton, nextLayerButton;
     private Button clearWaterButton;
+    private Button removeLastWaterButton;
+    private Button placementButton;
+    private GameObject defaultPlacementPrefab;
+    private readonly List<Button> layerButtons = new();
+    private Button previousLayersButton, nextLayersButton;
+    private int layerPage;
+    private TMP_Text radiusValueText, strengthValueText, paintValueText;
+    private TMP_Text toolNameText, toolDescriptionText, paintSectionText;
+    private GameObject infoCard, paintCard, paintParametersCard;
+    private Image digUnderline, raiseUnderline, waterUnderline, paintUnderline, placementUnderline;
+    private TMP_Text placementTitleText, placementHelpText;
+    private Sprite roundedUISprite;
+    private Texture2D roundedUITexture;
+    private ToolMode styledMode = (ToolMode)(-1);
 
     private class WaterRecord
     {
@@ -140,10 +151,6 @@ public class GameManager : MonoBehaviour
     private float[,,] originalAlphamaps;
     private TerrainData currentTerrainData;
 
-    private Vector2 strengthTextOrigPos, strengthSliderOrigPos;
-    private Vector2 paintStrengthTextOrigPos, paintStrengthSliderOrigPos;
-    private Vector2 prevLayerOrigPos, nextLayerOrigPos, layerTextOrigPos;
-
     private readonly ActionHistory actionHistory = new();
     private TerrainAction activeTerrainAction;
 
@@ -158,6 +165,7 @@ public class GameManager : MonoBehaviour
 
         if (targetTerrain != null) materialLibrary.ApplyAllToTerrain(targetTerrain);
 
+        if (!placementPrefab) placementPrefab = defaultPlacementPrefab = CreateDefaultPlacementPrefab();
         CreateUI();
         if (uiRoot != null) uiRoot.SetActive(false);
         lastUIDistance = uiDistance;
@@ -178,7 +186,14 @@ public class GameManager : MonoBehaviour
         ResetTerrainToOriginal();
     }
 
-    void OnDestroy() => ResetTerrainToOriginal();
+    void OnDestroy()
+    {
+        ResetTerrainToOriginal();
+        if (uiRoot) Destroy(uiRoot);
+        if (roundedUISprite) Destroy(roundedUISprite);
+        if (roundedUITexture) Destroy(roundedUITexture);
+        if (defaultPlacementPrefab) Destroy(defaultPlacementPrefab);
+    }
 
     void ResetTerrainToOriginal()
     {
@@ -234,7 +249,7 @@ public class GameManager : MonoBehaviour
     void UpdateBrushHint(Vector3 brushCenter, bool brushVisible)
     {
         if (!brushHint) return;
-        bool show = showBrushHint && currentMode != ToolMode.Water;
+        bool show = showBrushHint;
         brushHint.gameObject.SetActive(show);
         if (!show) return;
 
@@ -266,9 +281,10 @@ public class GameManager : MonoBehaviour
 
         string text = currentMode switch
         {
-            ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
-            ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
+            ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F3}",
+            ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F3}",
             ToolMode.Paint => $"Краска  •  Кисть {brushSize:F1} м  •  {paintStrength:F2}  •  {GetLayerName(paintLayer)}",
+            ToolMode.Water => "Вода  •  Нажмите для заполнения",
             ToolMode.Placement => "Размещение  •  Нажмите для установки",
             _ => ""
         };
@@ -401,7 +417,8 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            strength = Mathf.Clamp(strength + delta, 0.001f, 0.05f);
+            // Keep the terrain adjustment useful within its smaller range.
+            strength = Mathf.Clamp(strength + delta * 0.05f, 0.001f, 0.05f);
             if (strengthSlider) strengthSlider.SetValueWithoutNotify(strength);
         }
     }
@@ -410,7 +427,7 @@ public class GameManager : MonoBehaviour
     {
         if (!laserLine) return;
         Transform controller = GetRightController();
-        if (!controller) { laserLine.enabled = false; return; }
+        if (!controller) { laserLine.enabled = false; UpdateBrushHint(Vector3.zero, false); return; }
 
         Vector3 direction = Quaternion.AngleAxis(rayDownAngle, controller.right) * controller.forward;
         Ray ray = new Ray(controller.position, direction);
@@ -485,6 +502,7 @@ public class GameManager : MonoBehaviour
         uiActive = !uiActive;
         if (uiActive)
         {
+            CompleteActiveActions();
             Camera cam = Camera.main;
             if (cam) { uiRoot.transform.SetParent(cam.transform, false); uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance); uiRoot.transform.localRotation = Quaternion.identity; uiRoot.transform.localScale = uiScale; }
             else { uiRoot.transform.SetParent(null); uiRoot.transform.position = new Vector3(0, 2, 1.5f); uiRoot.transform.LookAt(Vector3.zero); }
@@ -575,6 +593,7 @@ public class GameManager : MonoBehaviour
         if (!placementPrefab) { Debug.LogWarning("Назначьте Placement Prefab."); return; }
         CompleteActiveActions();
         GameObject instance = Instantiate(placementPrefab, worldPos, placementPrefab.transform.rotation);
+        instance.SetActive(true);
         instance.transform.localScale = placementScale;
         Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
         if (renderers.Length > 0)
@@ -585,6 +604,27 @@ public class GameManager : MonoBehaviour
         }
         instance.transform.position += Vector3.down * placementSink;
         actionHistory.Add(new PlacementAction(placementPrefab, instance));
+    }
+
+    GameObject CreateDefaultPlacementPrefab()
+    {
+        GameObject rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        rock.name = "Камень";
+        rock.SetActive(false);
+        rock.transform.SetParent(transform, false);
+        Mesh mesh = rock.GetComponent<MeshFilter>().mesh;
+        Vector3[] vertices = mesh.vertices;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 v = vertices[i];
+            float irregularity = 0.86f + 0.22f * Mathf.PerlinNoise(v.x * 4f + 5f, v.z * 4f + v.y * 2f + 5f);
+            vertices[i] = Vector3.Scale(v * irregularity, new Vector3(1.1f, 0.7f, 0.95f));
+        }
+        mesh.vertices = vertices;
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        rock.GetComponent<Renderer>().material.color = new Color(0.38f, 0.40f, 0.37f);
+        return rock;
     }
 
     // =========================================================
@@ -660,6 +700,16 @@ public class GameManager : MonoBehaviour
         waterHistory.Clear();
         List<WaterState> after = CaptureWaterStates();
         actionHistory.Add(new WaterAction(before, after, RestoreWaterStates));
+    }
+
+    void RemoveLastWater()
+    {
+        List<WaterState> before = CaptureWaterStates();
+        if (before.Count == 0) return;
+        WaterRecord last = waterHistory[waterHistory.Count - 1];
+        if (last.water) Destroy(last.water.gameObject);
+        waterHistory.RemoveAt(waterHistory.Count - 1);
+        actionHistory.Add(new WaterAction(before, CaptureWaterStates(), RestoreWaterStates));
     }
 
     List<WaterState> CaptureWaterStates()
@@ -765,9 +815,12 @@ public class GameManager : MonoBehaviour
 
     string GetLayerName(int idx)
     {
-        if (targetTerrain && targetTerrain.terrainData.terrainLayers.Length > idx)
-            return "Слой-" + targetTerrain.terrainData.terrainLayers[idx].name;
-        return "Слой " + idx;
+        if (targetTerrain && targetTerrain.terrainData && idx >= 0 && idx < targetTerrain.terrainData.terrainLayers.Length)
+        {
+            TerrainLayer layer = targetTerrain.terrainData.terrainLayers[idx];
+            if (layer) return layer.name;
+        }
+        return "Нет покрытия";
     }
 
     void CompleteActiveActions()
@@ -780,276 +833,354 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    static readonly Color PanelColor = new Color32(13, 21, 25, 255);
+    static readonly Color ButtonColor = new Color32(37, 54, 57, 255);
+    static readonly Color TrackColor = new Color32(61, 80, 80, 255);
+    static readonly Color AccentColor = new Color32(112, 227, 177, 255);
+    static readonly Color MutedColor = new Color32(174, 195, 188, 255);
+
     void CreateUI()
     {
-        uiRoot = new GameObject("FixedUI", typeof(RectTransform), typeof(Canvas));
-        uiRoot.transform.SetParent(null);
-        Canvas canvas = uiRoot.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.WorldSpace;
-        uiRoot.AddComponent<TrackedDeviceGraphicRaycaster>();
-        RectTransform cr = uiRoot.GetComponent<RectTransform>();
-        cr.sizeDelta = new Vector2(800, 500);
+        uiRoot = new GameObject("FixedUI", typeof(RectTransform), typeof(Canvas), typeof(TrackedDeviceGraphicRaycaster));
+        uiRoot.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        uiRoot.GetComponent<RectTransform>().sizeDelta = new Vector2(800, 500);
         uiRoot.layer = LayerMask.NameToLayer("UI");
-        AssignLayerRecursively(uiRoot, uiRoot.layer);
+        CreateRoundedUISprite();
+        Image frame = MakeImage("PanelFrame", uiRoot.transform, Vector2.zero, new Vector2(800, 500), new Color32(64, 102, 88, 255));
+        ApplyRounded(frame);
+        Image panel = MakeImage("Panel", uiRoot.transform, new Vector2(2, 2), new Vector2(796, 496), PanelColor);
+        ApplyRounded(panel);
+        Image accent = MakeImage("HeaderAccent", uiRoot.transform, new Vector2(25, 19), new Vector2(5, 42), AccentColor);
+        accent.raycastTarget = false;
+        TMP_Text heading = MakeText("Heading", "Рельеф и вода", new Vector2(43, 13), new Vector2(360, 38), 29);
+        heading.fontStyle = FontStyles.Bold;
+        TMP_Text subtitle = MakeText("Subtitle", "МАСТЕРСКАЯ ЛАНДШАФТА", new Vector2(44, 49), new Vector2(370, 21), 15);
+        subtitle.color = MutedColor;
+        Image mainCard = MakeImage("Workspace", uiRoot.transform, new Vector2(24, 86), new Vector2(504, 305), new Color32(24, 37, 40, 255));
+        ApplyRounded(mainCard); mainCard.raycastTarget = false;
+        Image details = MakeImage("ToolDetails", uiRoot.transform, new Vector2(540, 86), new Vector2(236, 305), new Color32(29, 49, 46, 255));
+        ApplyRounded(details); details.raycastTarget = false; infoCard = details.gameObject;
+        Image surfaces = MakeImage("SurfaceCard", uiRoot.transform, new Vector2(24, 86), new Vector2(405, 305), new Color32(24, 37, 40, 255));
+        ApplyRounded(surfaces); surfaces.raycastTarget = false; paintCard = surfaces.gameObject;
+        Image settings = MakeImage("PaintSettingsCard", uiRoot.transform, new Vector2(441, 86), new Vector2(335, 305), new Color32(29, 49, 46, 255));
+        ApplyRounded(settings); settings.raycastTarget = false; paintParametersCard = settings.gameObject;
+        Image separator = MakeImage("NavigationDivider", uiRoot.transform, new Vector2(24, 409), new Vector2(752, 1), new Color32(52, 75, 69, 255));
+        separator.raycastTarget = false;
 
-        GameObject panel = new GameObject("Panel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        panel.transform.SetParent(uiRoot.transform, false);
-        panel.GetComponent<Image>().color = uiStyle?.panelBgColor ?? new Color(0, 0, 0, 0.5f);
-        RectTransform pr = panel.GetComponent<RectTransform>();
-        pr.anchorMin = Vector2.zero; pr.anchorMax = Vector2.one; pr.sizeDelta = Vector2.zero;
+        TMP_Text infoCaption = MakeText("InfoCaption", "ИНСТРУМЕНТ", new Vector2(560, 108), new Vector2(190, 25), 15);
+        infoCaption.color = AccentColor;
+        infoCaption.transform.SetParent(infoCard.transform, true);
+        toolNameText = MakeText("ToolName", "", new Vector2(560, 140), new Vector2(190, 55), 27);
+        toolNameText.fontStyle = FontStyles.Bold;
+        toolNameText.transform.SetParent(infoCard.transform, true);
+        toolDescriptionText = MakeText("ToolDescription", "", new Vector2(560, 210), new Vector2(185, 110), 19);
+        toolDescriptionText.color = MutedColor;
+        toolDescriptionText.transform.SetParent(infoCard.transform, true);
+        paintSectionText = MakeText("PaintSection", "ВЫБЕРИТЕ ПОКРЫТИЕ", new Vector2(46, 105), new Vector2(350, 26), 16);
+        paintSectionText.color = AccentColor;
 
-        modeText = CreateText("ModeText", uiRoot.transform, "Режим: Копание", 28, TextAlignmentOptions.Left);
-        modeText.rectTransform.anchorMin = new Vector2(0, 1); modeText.rectTransform.anchorMax = new Vector2(0, 1);
-        modeText.rectTransform.pivot = new Vector2(0, 1);
-        modeText.rectTransform.anchoredPosition = new Vector2(30, -15);
-        modeText.rectTransform.sizeDelta = new Vector2(350, 40);
-
-        float lm = 30f, sw = 740f, lh = 28f, sh = 24f;
-        float yPos = -70f, rs = 50f;
-
-        brushSizeText = CreateText("BrushLabel", uiRoot.transform, "Кисть: 2.5", 20, TextAlignmentOptions.Left);
-        brushSizeText.rectTransform.anchorMin = new Vector2(0, 1); brushSizeText.rectTransform.anchorMax = new Vector2(0, 1);
-        brushSizeText.rectTransform.pivot = new Vector2(0, 1);
-        brushSizeText.rectTransform.anchoredPosition = new Vector2(lm, yPos);
-        brushSizeText.rectTransform.sizeDelta = new Vector2(250, lh);
-        yPos -= lh + 8;
-        brushSizeSlider = CreateSlider("BrushSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.1f, 10f, 2.5f);
+        brushSizeText = MakeText("Radius", "Радиус", new Vector2(20, 28), new Vector2(180, 36), 27);
+        radiusValueText = MakeText("RadiusValue", "", new Vector2(710, 85), new Vector2(75, 30), 21);
+        brushSizeSlider = MakeSlider("RadiusSlider", new Vector2(20, 89), new Vector2(680, 28), 0.1f, 10f, brushSize);
         brushSizeSlider.onValueChanged.AddListener(v => brushSize = v);
-        yPos -= sh + rs;
 
-        strengthText = CreateText("StrengthLabel", uiRoot.transform, "Сила: 0.800", 20, TextAlignmentOptions.Left);
-        strengthText.rectTransform.anchorMin = new Vector2(0, 1); strengthText.rectTransform.anchorMax = new Vector2(0, 1);
-        strengthText.rectTransform.pivot = new Vector2(0, 1);
-        strengthText.rectTransform.anchoredPosition = new Vector2(lm, yPos);
-        strengthText.rectTransform.sizeDelta = new Vector2(250, lh);
-        strengthTextOrigPos = strengthText.rectTransform.anchoredPosition;
-        yPos -= lh + 8;
-        strengthSlider = CreateSlider("StrengthSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.001f, 0.05f, strength);
+        strengthText = MakeText("Strength", "Сила", new Vector2(20, 185), new Vector2(180, 36), 27);
+        strengthValueText = MakeText("StrengthValue", "", new Vector2(710, 240), new Vector2(75, 30), 21);
+        strengthSlider = MakeSlider("StrengthSlider", new Vector2(20, 244), new Vector2(680, 28), 0.001f, 0.05f, strength);
         strengthSlider.onValueChanged.AddListener(v => strength = v);
-        strengthSliderOrigPos = strengthSlider.GetComponent<RectTransform>().anchoredPosition;
-        yPos -= sh + rs;
-
-        paintStrengthText = CreateText("PaintLabel", uiRoot.transform, "Краска: 0.50", 20, TextAlignmentOptions.Left);
-        paintStrengthText.rectTransform.anchorMin = new Vector2(0, 1); paintStrengthText.rectTransform.anchorMax = new Vector2(0, 1);
-        paintStrengthText.rectTransform.pivot = new Vector2(0, 1);
-        paintStrengthText.rectTransform.anchoredPosition = new Vector2(lm, yPos);
-        paintStrengthText.rectTransform.sizeDelta = new Vector2(250, lh);
-        paintStrengthTextOrigPos = paintStrengthText.rectTransform.anchoredPosition;
-        yPos -= lh + 8;
-        paintStrengthSlider = CreateSlider("PaintSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0f, 2f, 0.5f);
+        paintStrengthText = MakeText("PaintStrength", "Сила", new Vector2(20, 220), new Vector2(180, 36), 27);
+        paintValueText = MakeText("PaintValue", "", new Vector2(440, 265), new Vector2(75, 30), 21);
+        paintStrengthSlider = MakeSlider("PaintSlider", new Vector2(20, 269), new Vector2(410, 28), 0f, 2f, paintStrength);
         paintStrengthSlider.onValueChanged.AddListener(v => paintStrength = v);
-        paintStrengthSliderOrigPos = paintStrengthSlider.GetComponent<RectTransform>().anchoredPosition;
-        yPos -= sh + 45f;
 
-        float aw = 120f, ah = 55f;
-        prevLayerButton = CreateButton("PrevLayer", uiRoot.transform, "◄", Vector2.zero, Vector2.zero);
-        RectTransform pvr = prevLayerButton.GetComponent<RectTransform>();
-        pvr.anchorMin = pvr.anchorMax = new Vector2(0, 1); pvr.pivot = new Vector2(0, 1);
-        pvr.anchoredPosition = new Vector2(60, yPos); pvr.sizeDelta = new Vector2(aw, ah);
-        prevLayerButton.onClick.AddListener(PrevPaintLayer); prevLayerOrigPos = pvr.anchoredPosition;
+        digButton = MakeModeButton("Dig", "Копать", ToolMode.Dig, out digUnderline);
+        raiseButton = MakeModeButton("Raise", "Насыпать", ToolMode.Raise, out raiseUnderline);
+        waterButton = MakeModeButton("Water", "Вода", ToolMode.Water, out waterUnderline);
+        paintButton = MakeModeButton("Paint", "Покраска", ToolMode.Paint, out paintUnderline);
+        placementButton = MakeModeButton("Placement", "Объекты", ToolMode.Placement, out placementUnderline);
+        placementTitleText = MakeText("PlacementTitle", "Размещение объектов", new Vector2(48, 132), new Vector2(450, 42), 27);
+        placementTitleText.fontStyle = FontStyles.Bold;
+        placementHelpText = MakeText("PlacementHelp", defaultPlacementPrefab ? "Камень готов к размещению. Наведите на поверхность и нажмите Grip." : "Объект готов к размещению. Наведите на поверхность и нажмите Grip.", new Vector2(48, 204), new Vector2(440, 110), 21);
+        placementHelpText.color = MutedColor;
 
-        nextLayerButton = CreateButton("NextLayer", uiRoot.transform, "►", Vector2.zero, Vector2.zero);
-        RectTransform nxr = nextLayerButton.GetComponent<RectTransform>();
-        nxr.anchorMin = nxr.anchorMax = new Vector2(1, 1); nxr.pivot = new Vector2(1, 1);
-        nxr.anchoredPosition = new Vector2(-60, yPos); nxr.sizeDelta = new Vector2(aw, ah);
-        nextLayerButton.onClick.AddListener(NextPaintLayer); nextLayerOrigPos = nxr.anchoredPosition;
-
-        paintLayerText = CreateText("LayerText", uiRoot.transform, "Слой: 0", 22, TextAlignmentOptions.Center);
-        paintLayerText.rectTransform.anchorMin = new Vector2(0, 1); paintLayerText.rectTransform.anchorMax = new Vector2(1, 1);
-        paintLayerText.rectTransform.pivot = new Vector2(0.5f, 1);
-        paintLayerText.rectTransform.anchoredPosition = new Vector2(0, yPos - 8);
-        paintLayerText.rectTransform.sizeDelta = new Vector2(-(aw * 2 + 60), 34);
-        layerTextOrigPos = paintLayerText.rectTransform.anchoredPosition;
-
-        yPos -= ah + 20f;
-
-        float mbw = 120f, mbh = 55f, bm = 25f, sx = 60f, spx = 20f;
-
-        digButton = CreateModeButton("BtnDig", "Копать", new Vector2(sx, bm), new Vector2(mbw, mbh));
-        raiseButton = CreateModeButton("BtnRaise", "Насыпать", new Vector2(sx + (mbw + spx), bm), new Vector2(mbw, mbh));
-        paintButton = CreateModeButton("BtnPaint", "Красить", new Vector2(sx + (mbw + spx) * 2, bm), new Vector2(mbw, mbh));
-        waterButton = CreateModeButton("BtnWater", "Вода", new Vector2(sx + (mbw + spx) * 3, bm), new Vector2(mbw, mbh));
-        placementButton = CreateModeButton("BtnPlacement", "Размещение", new Vector2(sx + (mbw + spx) * 4, bm), new Vector2(mbw, mbh));
-
-        digButton.onClick.AddListener(() => currentMode = ToolMode.Dig);
-        raiseButton.onClick.AddListener(() => currentMode = ToolMode.Raise);
-        paintButton.onClick.AddListener(() => currentMode = ToolMode.Paint);
-        waterButton.onClick.AddListener(() => currentMode = ToolMode.Water);
-        placementButton.onClick.AddListener(() => currentMode = ToolMode.Placement);
-
-        float bigH = 65f, hp = 30f;
-        float baseY = bm + mbh + 10f;
-
-        clearWaterButton = CreateButton("ClearAllWaterBtn", uiRoot.transform, "Удалить всю воду", Vector2.zero, Vector2.zero);
-        RectTransform crt = clearWaterButton.GetComponent<RectTransform>();
-        crt.anchorMin = new Vector2(0, 0); crt.anchorMax = new Vector2(1, 0); crt.pivot = new Vector2(0.5f, 0);
-        crt.anchoredPosition = new Vector2(0, baseY);
-        crt.sizeDelta = new Vector2(-hp * 2, bigH);
+        removeLastWaterButton = MakeButton("RemoveLastWater", "Отменить последнюю воду", new Vector2(48, 142), new Vector2(456, 66));
+        removeLastWaterButton.onClick.AddListener(RemoveLastWater);
+        clearWaterButton = MakeButton("ClearWater", "Удалить всю воду", new Vector2(48, 247), new Vector2(456, 66));
         clearWaterButton.onClick.AddListener(ClearAllWater);
+
+        TerrainLayer[] layers = targetTerrain && targetTerrain.terrainData ? targetTerrain.terrainData.terrainLayers : System.Array.Empty<TerrainLayer>();
+        for (int i = 0; i < layers.Length; i++)
+        {
+            int index = i;
+            Button button = MakeButton("Layer" + i, "", new Vector2(46 + (i % 4) * 91, 142 + ((i % 8) / 4) * 82), new Vector2(76, 68));
+            button.onClick.AddListener(() => paintLayer = index);
+            Image preview = MakeImage("Preview", button.transform, new Vector2(4, 4), new Vector2(68, 60), ButtonColor);
+            preview.raycastTarget = false;
+            if (layers[i] && layers[i].diffuseTexture)
+            {
+                Texture2D texture = layers[i].diffuseTexture;
+                preview.sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
+                preview.color = Color.white;
+            }
+            layerButtons.Add(button);
+        }
+        previousLayersButton = MakeButton("PreviousLayers", "◀", new Vector2(307, 323), new Vector2(43, 42));
+        nextLayersButton = MakeButton("NextLayers", "▶", new Vector2(358, 323), new Vector2(43, 42));
+        previousLayersButton.onClick.AddListener(() => { layerPage = Mathf.Max(0, layerPage - 1); UpdateUI(); });
+        nextLayersButton.onClick.AddListener(() => { layerPage = Mathf.Min((layerButtons.Count - 1) / 8, layerPage + 1); UpdateUI(); });
+        paintLayerText = MakeText("SelectedLayer", "", new Vector2(46, 329), new Vector2(250, 26), 18);
+        paintLayerText.color = MutedColor;
+        AssignLayerRecursively(uiRoot, uiRoot.layer);
+        UpdateUI();
     }
 
-    Button CreateModeButton(string name, string text, Vector2 pos, Vector2 size)
+    void CreateRoundedUISprite()
     {
-        Button btn = CreateButton(name, uiRoot.transform, text, pos, size);
-        RectTransform r = btn.GetComponent<RectTransform>();
-        r.anchorMin = r.anchorMax = new Vector2(0, 0);
-        r.pivot = new Vector2(0, 0);
-        r.anchoredPosition = pos;
-        return btn;
+        const int size = 64;
+        const float radius = 15f;
+        roundedUITexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        roundedUITexture.name = "Rounded UI";
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = Mathf.Max(Mathf.Abs(x - 31.5f) - (31.5f - radius), 0f);
+                float dy = Mathf.Max(Mathf.Abs(y - 31.5f) - (31.5f - radius), 0f);
+                float alpha = Mathf.Clamp01(radius + 0.5f - Mathf.Sqrt(dx * dx + dy * dy));
+                roundedUITexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        roundedUITexture.Apply();
+        roundedUISprite = Sprite.Create(roundedUITexture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(16, 16, 16, 16));
     }
 
-    void SetModeButtonColor(Button btn, bool active, Color activeColor, Color baseColor)
+    void ApplyRounded(Image image)
     {
-        if (!btn) return;
-        Image img = btn.GetComponent<Image>();
-        if (img) img.color = active ? activeColor : baseColor;
+        image.sprite = roundedUISprite;
+        image.type = Image.Type.Sliced;
+    }
+
+    Image MakeImage(string name, Transform parent, Vector2 position, Vector2 size, Color color)
+    {
+        GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        go.transform.SetParent(parent, false);
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = new Vector2(position.x, -position.y);
+        rect.sizeDelta = size;
+        Image image = go.GetComponent<Image>();
+        image.color = color;
+        return image;
+    }
+
+    TMP_Text MakeText(string name, string value, Vector2 position, Vector2 size, float fontSize)
+    {
+        GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        go.transform.SetParent(uiRoot.transform, false);
+        TMP_Text text = go.GetComponent<TMP_Text>();
+        text.rectTransform.anchorMin = text.rectTransform.anchorMax = text.rectTransform.pivot = new Vector2(0, 1);
+        text.rectTransform.anchoredPosition = new Vector2(position.x, -position.y);
+        text.rectTransform.sizeDelta = size;
+        text.text = value;
+        text.fontSize = fontSize;
+        text.color = Color.white;
+        text.raycastTarget = false;
+        if (uiStyle && uiStyle.mainFont) text.font = uiStyle.mainFont;
+        return text;
+    }
+
+    Button MakeButton(string name, string label, Vector2 position, Vector2 size)
+    {
+        Image image = MakeImage(name, uiRoot.transform, position, size, ButtonColor);
+        ApplyRounded(image);
+        Button button = image.gameObject.AddComponent<Button>();
+        button.targetGraphic = image;
+        SetButtonColors(button, ButtonColor);
+        TMP_Text text = MakeText(name + "Label", label, Vector2.zero, size, 22);
+        text.transform.SetParent(image.transform, false);
+        text.rectTransform.anchorMin = Vector2.zero;
+        text.rectTransform.anchorMax = Vector2.one;
+        text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+        text.alignment = TextAlignmentOptions.Center;
+        return button;
+    }
+
+    void SetButtonColors(Button button, Color normal)
+    {
+        ColorBlock colors = button.colors;
+        colors.normalColor = normal;
+        colors.highlightedColor = Color.Lerp(normal, AccentColor, 0.24f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.pressedColor = Color.Lerp(normal, AccentColor, 0.40f);
+        colors.disabledColor = new Color32(39, 48, 49, 150);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.12f;
+        button.colors = colors;
+    }
+
+    Button MakeModeButton(string name, string label, ToolMode mode, out Image underline)
+    {
+        Button button = MakeButton(name, label, Vector2.zero, new Vector2(142, 54));
+        button.onClick.AddListener(() => { CompleteActiveActions(); currentMode = mode; UpdateUI(); });
+        underline = MakeImage("Selected", button.transform, new Vector2(17, 54), new Vector2(108, 4), AccentColor);
+        underline.raycastTarget = false;
+        return button;
+    }
+
+    Slider MakeSlider(string name, Vector2 position, Vector2 size, float min, float max, float value)
+    {
+        GameObject go = new GameObject(name, typeof(RectTransform), typeof(Slider));
+        go.transform.SetParent(uiRoot.transform, false);
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 1);
+        rect.anchoredPosition = new Vector2(position.x, -position.y);
+        rect.sizeDelta = size;
+        Image track = MakeImage("TrackHitArea", go.transform, Vector2.zero, size, new Color(0, 0, 0, 0));
+        track.raycastTarget = true;
+        track.rectTransform.anchorMin = new Vector2(0, 0.5f);
+        track.rectTransform.anchorMax = new Vector2(1, 0.5f);
+        track.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        track.rectTransform.anchoredPosition = Vector2.zero;
+        track.rectTransform.sizeDelta = new Vector2(0, 48);
+        Image bar = MakeImage("Track", track.transform, Vector2.zero, Vector2.zero, TrackColor);
+        bar.raycastTarget = false;
+        ApplyRounded(bar);
+        bar.rectTransform.anchorMin = new Vector2(0, 0.5f);
+        bar.rectTransform.anchorMax = new Vector2(1, 0.5f);
+        bar.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        bar.rectTransform.anchoredPosition = Vector2.zero;
+        bar.rectTransform.sizeDelta = new Vector2(-24, 6);
+        GameObject fillArea = new GameObject("FillArea", typeof(RectTransform));
+        fillArea.transform.SetParent(go.transform, false);
+        RectTransform fillAreaRect = fillArea.GetComponent<RectTransform>();
+        fillAreaRect.anchorMin = new Vector2(0, 0.5f);
+        fillAreaRect.anchorMax = new Vector2(1, 0.5f);
+        fillAreaRect.pivot = new Vector2(0.5f, 0.5f);
+        fillAreaRect.anchoredPosition = Vector2.zero;
+        fillAreaRect.sizeDelta = new Vector2(-24, 6);
+        Image fill = MakeImage("Fill", fillArea.transform, Vector2.zero, Vector2.zero, AccentColor);
+        fill.raycastTarget = false;
+        ApplyRounded(fill);
+        fill.rectTransform.anchorMin = Vector2.zero;
+        fill.rectTransform.anchorMax = Vector2.one;
+        fill.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        fill.rectTransform.anchoredPosition = Vector2.zero;
+        GameObject handleArea = new GameObject("HandleArea", typeof(RectTransform));
+        handleArea.transform.SetParent(go.transform, false);
+        RectTransform handleAreaRect = handleArea.GetComponent<RectTransform>();
+        handleAreaRect.anchorMin = new Vector2(0, 0.5f);
+        handleAreaRect.anchorMax = new Vector2(1, 0.5f);
+        handleAreaRect.pivot = new Vector2(0.5f, 0.5f);
+        handleAreaRect.anchoredPosition = Vector2.zero;
+        handleAreaRect.sizeDelta = new Vector2(-24, 0);
+        Image handle = MakeImage("Handle", handleArea.transform, Vector2.zero, new Vector2(24, 24), AccentColor);
+        handle.raycastTarget = false;
+        Texture2D circle = new Texture2D(32, 32, TextureFormat.RGBA32, false);
+        for (int y = 0; y < 32; y++)
+            for (int x = 0; x < 32; x++)
+                circle.SetPixel(x, y, new Vector2(x - 15.5f, y - 15.5f).sqrMagnitude <= 240f ? Color.white : Color.clear);
+        circle.Apply();
+        handle.sprite = Sprite.Create(circle, new Rect(0, 0, 32, 32), new Vector2(0.5f, 0.5f));
+        handle.rectTransform.anchorMin = handle.rectTransform.anchorMax = new Vector2(0, 0.5f);
+        handle.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        handle.rectTransform.anchoredPosition = Vector2.zero;
+        Slider slider = go.GetComponent<Slider>();
+        slider.minValue = min; slider.maxValue = max;
+        slider.fillRect = fill.rectTransform;
+        slider.handleRect = handle.rectTransform;
+        slider.targetGraphic = track;
+        slider.value = value;
+        return slider;
     }
 
     void AssignLayerRecursively(GameObject obj, int layer)
     {
         obj.layer = layer;
-        foreach (Transform t in obj.transform) AssignLayerRecursively(t.gameObject, layer);
-    }
-
-    TMP_Text CreateText(string name, Transform parent, string text, int size, TextAlignmentOptions align)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        go.transform.SetParent(parent, false);
-        TMP_Text tmp = go.GetComponent<TextMeshProUGUI>();
-        tmp.text = text; tmp.fontSize = uiStyle?.labelFontSize ?? size; tmp.alignment = align;
-        tmp.color = uiStyle?.textColor ?? Color.white;
-        tmp.rectTransform.localScale = Vector3.one;
-        return tmp;
-    }
-
-    Button CreateButton(string name, Transform parent, string text, Vector2 anchoredPos, Vector2 sizeDelta)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-        go.transform.SetParent(parent, false);
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1);
-        rt.pivot = new Vector2(0, 1);
-        rt.anchoredPosition = anchoredPos; rt.sizeDelta = sizeDelta;
-        go.GetComponent<Image>().color = uiStyle?.buttonColor ?? new Color(0.3f, 0.3f, 0.3f, 0.8f);
-        Button btn = go.GetComponent<Button>();
-        GameObject textGo = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        textGo.transform.SetParent(go.transform, false);
-        TMP_Text tmp = textGo.GetComponent<TextMeshProUGUI>();
-        tmp.text = text; tmp.fontSize = uiStyle?.buttonFontSize ?? 20; tmp.alignment = TextAlignmentOptions.Center;
-        tmp.color = uiStyle?.buttonTextColor ?? Color.white;
-        tmp.rectTransform.anchorMin = Vector2.zero; tmp.rectTransform.anchorMax = Vector2.one; tmp.rectTransform.sizeDelta = Vector2.zero;
-        return btn;
-    }
-
-    Slider CreateSlider(string name, Transform parent, Vector2 anchoredPos, Vector2 sizeDelta, float min, float max, float val)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(Slider));
-        go.transform.SetParent(parent, false);
-        RectTransform rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(0, 1); rt.pivot = new Vector2(0, 1);
-        rt.anchoredPosition = anchoredPos; rt.sizeDelta = sizeDelta;
-        Slider sl = go.GetComponent<Slider>();
-        sl.minValue = min; sl.maxValue = max; sl.value = val;
-
-        GameObject bg = new GameObject("Background", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        bg.transform.SetParent(go.transform, false);
-        bg.GetComponent<Image>().color = uiStyle?.sliderBgColor ?? new Color(0.2f, 0.2f, 0.2f);
-        RectTransform bgr = bg.GetComponent<RectTransform>();
-        bgr.anchorMin = Vector2.zero; bgr.anchorMax = Vector2.one; bgr.sizeDelta = Vector2.zero;
-
-        GameObject fa = new GameObject("Fill Area", typeof(RectTransform));
-        fa.transform.SetParent(go.transform, false);
-        RectTransform far = fa.GetComponent<RectTransform>();
-        far.anchorMin = Vector2.zero; far.anchorMax = Vector2.one;
-        far.sizeDelta = new Vector2(-30, 0); far.anchoredPosition = new Vector2(15, 0);
-
-        GameObject fill = new GameObject("Fill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        fill.transform.SetParent(fa.transform, false);
-        fill.GetComponent<Image>().color = uiStyle?.sliderFillColor ?? new Color(0.4f, 0.6f, 1f);
-        RectTransform fr = fill.GetComponent<RectTransform>();
-        fr.anchorMin = Vector2.zero; fr.anchorMax = Vector2.one; fr.sizeDelta = Vector2.zero;
-
-        GameObject ha = new GameObject("Handle Slide Area", typeof(RectTransform));
-        ha.transform.SetParent(go.transform, false);
-        RectTransform har = ha.GetComponent<RectTransform>();
-        har.anchorMin = Vector2.zero; har.anchorMax = Vector2.one; har.sizeDelta = Vector2.zero;
-
-        GameObject handle = new GameObject("Handle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        handle.transform.SetParent(ha.transform, false);
-        handle.GetComponent<Image>().color = Color.white;
-        RectTransform hr = handle.GetComponent<RectTransform>();
-        hr.anchorMin = Vector2.zero; hr.anchorMax = Vector2.one; hr.sizeDelta = new Vector2(12, 24);
-
-        sl.fillRect = fr; sl.handleRect = hr; sl.targetGraphic = handle.GetComponent<Image>();
-        sl.transition = Selectable.Transition.None;
-        return sl;
+        foreach (Transform child in obj.transform) AssignLayerRecursively(child.gameObject, layer);
     }
 
     void UpdateUI()
     {
-        string modeStr = currentMode switch
-        {
-            ToolMode.Dig => "Копание",
-            ToolMode.Raise => "Насыпь",
-            ToolMode.Paint => "Краска",
-            ToolMode.Water => "Вода",
-            ToolMode.Placement => "Размещение",
-            _ => ""
-        };
-
-        if (modeText) modeText.text = $"Режим: {modeStr}";
-
-        if (currentMode != lastHighlightMode)
-        {
-            Color baseColor = uiStyle?.buttonColor ?? new Color(0.3f, 0.3f, 0.3f, 0.8f);
-            SetModeButtonColor(digButton, currentMode == ToolMode.Dig, digRingColor, baseColor);
-            SetModeButtonColor(raiseButton, currentMode == ToolMode.Raise, raiseRingColor, baseColor);
-            SetModeButtonColor(paintButton, currentMode == ToolMode.Paint, paintRingColor, baseColor);
-            SetModeButtonColor(waterButton, currentMode == ToolMode.Water, new Color(0.2f, 0.6f, 1f), baseColor);
-            SetModeButtonColor(placementButton, currentMode == ToolMode.Placement, new Color(1f, 0.8f, 0.2f), baseColor);
-            lastHighlightMode = currentMode;
-        }
-
-        bool digRaise = currentMode is ToolMode.Dig or ToolMode.Raise;
+        if (!brushSizeSlider) return;
         bool paint = currentMode == ToolMode.Paint;
         bool water = currentMode == ToolMode.Water;
-        bool placement = currentMode == ToolMode.Placement;
-
-        if (brushSizeText) brushSizeText.gameObject.SetActive(!water && !placement);
-        if (brushSizeSlider) brushSizeSlider.gameObject.SetActive(!water && !placement);
-        if (strengthText) strengthText.gameObject.SetActive(digRaise);
-        if (strengthSlider) strengthSlider.gameObject.SetActive(digRaise);
-        if (paintStrengthText) paintStrengthText.gameObject.SetActive(paint);
-        if (paintStrengthSlider) paintStrengthSlider.gameObject.SetActive(paint);
-        if (paintLayerText) paintLayerText.gameObject.SetActive(paint);
-        if (prevLayerButton) prevLayerButton.gameObject.SetActive(paint);
-        if (nextLayerButton) nextLayerButton.gameObject.SetActive(paint);
-        if (clearWaterButton) clearWaterButton.gameObject.SetActive(water);
-
-        if (paint)
+        bool terrain = currentMode == ToolMode.Dig || currentMode == ToolMode.Raise;
+        infoCard.SetActive(!paint);
+        paintCard.SetActive(paint);
+        paintParametersCard.SetActive(paint);
+        paintSectionText.gameObject.SetActive(paint);
+        toolNameText.text = currentMode switch
         {
-            Vector2 shift = strengthTextOrigPos - paintStrengthTextOrigPos;
-            paintStrengthText.rectTransform.anchoredPosition = paintStrengthTextOrigPos + shift;
-            paintStrengthSlider.GetComponent<RectTransform>().anchoredPosition = paintStrengthSliderOrigPos + shift;
-            prevLayerButton.GetComponent<RectTransform>().anchoredPosition = prevLayerOrigPos + shift;
-            nextLayerButton.GetComponent<RectTransform>().anchoredPosition = nextLayerOrigPos + shift;
-            paintLayerText.rectTransform.anchoredPosition = layerTextOrigPos + shift;
-        }
-        else
+            ToolMode.Dig => "Копать",
+            ToolMode.Raise => "Насыпать",
+            ToolMode.Water => "Вода",
+            ToolMode.Placement => "Объекты",
+            _ => "Покрытие"
+        };
+        toolDescriptionText.text = currentMode switch
         {
-            paintStrengthText.rectTransform.anchoredPosition = paintStrengthTextOrigPos;
-            paintStrengthSlider.GetComponent<RectTransform>().anchoredPosition = paintStrengthSliderOrigPos;
-            prevLayerButton.GetComponent<RectTransform>().anchoredPosition = prevLayerOrigPos;
-            nextLayerButton.GetComponent<RectTransform>().anchoredPosition = nextLayerOrigPos;
-            paintLayerText.rectTransform.anchoredPosition = layerTextOrigPos;
+            ToolMode.Dig => "Создавайте углубления и формируйте берега.",
+            ToolMode.Raise => "Поднимайте поверхность и создавайте возвышенности.",
+            ToolMode.Water => "Добавляйте воду в подготовленные углубления.",
+            ToolMode.Placement => "Размещайте объекты на поверхности.",
+            _ => ""
+        };
+        Button[] modes = { digButton, raiseButton, waterButton, paintButton, placementButton };
+        Image[] underlines = { digUnderline, raiseUnderline, waterUnderline, paintUnderline, placementUnderline };
+        ToolMode[] values = { ToolMode.Dig, ToolMode.Raise, ToolMode.Water, ToolMode.Paint, ToolMode.Placement };
+        for (int i = 0; i < modes.Length; i++)
+        {
+            modes[i].GetComponent<RectTransform>().anchoredPosition = new Vector2(24 + i * 152, -428);
+            underlines[i].gameObject.SetActive(currentMode == values[i]);
+            if (styledMode != currentMode)
+                SetButtonColors(modes[i], currentMode == values[i] ? new Color32(38, 73, 60, 255) : ButtonColor);
         }
-
-        if (brushSizeText && !water) brushSizeText.text = $"Кисть: {brushSize:F1}";
-        if (strengthText && digRaise) strengthText.text = $"Сила: {strength:F3}";
-        if (paintStrengthText && paint) paintStrengthText.text = $"Краска: {paintStrength:F2}";
-        if (paintLayerText && paint) paintLayerText.text = GetLayerName(paintLayer);
+        styledMode = currentMode;
+        brushSizeText.gameObject.SetActive(terrain || paint);
+        brushSizeSlider.gameObject.SetActive(terrain || paint);
+        radiusValueText.gameObject.SetActive(terrain || paint);
+        brushSizeText.rectTransform.anchoredPosition = new Vector2(paint ? 465 : 48, paint ? -119 : -123);
+        brushSizeSlider.GetComponent<RectTransform>().anchoredPosition = new Vector2(paint ? 465 : 48, paint ? -173 : -174);
+        brushSizeSlider.GetComponent<RectTransform>().sizeDelta = new Vector2(paint ? 284 : 448, 28);
+        radiusValueText.rectTransform.anchoredPosition = new Vector2(paint ? 678 : 420, paint ? -124 : -128);
+        strengthText.gameObject.SetActive(terrain);
+        strengthText.rectTransform.anchoredPosition = new Vector2(48, -243);
+        strengthSlider.gameObject.SetActive(terrain);
+        strengthSlider.GetComponent<RectTransform>().anchoredPosition = new Vector2(48, -294);
+        strengthSlider.GetComponent<RectTransform>().sizeDelta = new Vector2(448, 28);
+        strengthValueText.gameObject.SetActive(terrain);
+        strengthValueText.rectTransform.anchoredPosition = new Vector2(420, -248);
+        paintStrengthText.gameObject.SetActive(paint);
+        paintStrengthText.rectTransform.anchoredPosition = new Vector2(465, -244);
+        paintStrengthSlider.gameObject.SetActive(paint);
+        paintStrengthSlider.GetComponent<RectTransform>().anchoredPosition = new Vector2(465, -295);
+        paintStrengthSlider.GetComponent<RectTransform>().sizeDelta = new Vector2(284, 28);
+        paintValueText.gameObject.SetActive(paint);
+        paintValueText.rectTransform.anchoredPosition = new Vector2(678, -249);
+        paintLayerText.gameObject.SetActive(paint);
+        removeLastWaterButton.gameObject.SetActive(water);
+        clearWaterButton.gameObject.SetActive(water);
+        bool pagedLayers = paint && layerButtons.Count > 8;
+        previousLayersButton.gameObject.SetActive(pagedLayers);
+        nextLayersButton.gameObject.SetActive(pagedLayers);
+        previousLayersButton.interactable = layerPage > 0;
+        nextLayersButton.interactable = (layerPage + 1) * 8 < layerButtons.Count;
+        placementTitleText.gameObject.SetActive(currentMode == ToolMode.Placement);
+        placementHelpText.gameObject.SetActive(currentMode == ToolMode.Placement);
+        bool hasWater = waterHistory.Count > 0;
+        removeLastWaterButton.interactable = hasWater;
+        clearWaterButton.interactable = hasWater;
+        brushSizeSlider.SetValueWithoutNotify(brushSize);
+        strengthSlider.SetValueWithoutNotify(strength);
+        paintStrengthSlider.SetValueWithoutNotify(paintStrength);
+        radiusValueText.text = $"{brushSize:F1} м";
+        strengthValueText.text = $"{Mathf.RoundToInt(Mathf.InverseLerp(0.001f, 0.05f, strength) * 100)}%";
+        paintValueText.text = $"{Mathf.RoundToInt(Mathf.InverseLerp(0f, 2f, paintStrength) * 100)}%";
+        radiusValueText.color = strengthValueText.color = paintValueText.color = MutedColor;
+        paintLayerText.text = GetLayerName(paintLayer);
+        for (int i = 0; i < layerButtons.Count; i++)
+        {
+            layerButtons[i].gameObject.SetActive(paint && i / 8 == layerPage);
+            layerButtons[i].GetComponent<Image>().color = i == paintLayer ? AccentColor : TrackColor;
+        }
     }
 
-    void PrevPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer - 1 + cnt) % cnt; }
-    void NextPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer + 1) % cnt; }
 }
