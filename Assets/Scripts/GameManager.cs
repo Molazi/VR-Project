@@ -20,7 +20,7 @@ public class GameManager : MonoBehaviour
     public float maxDistance = 80f;
     public enum ToolMode { Dig, Raise, Paint, Water, Placement }
     public ToolMode currentMode = ToolMode.Dig;
-    public float strength = 0.8f;
+    public float strength = 0.02f;
     public float brushSize = 2.5f;
     public float smoothingStrength = 0.3f;
     public float minTerrainHeight = 10f;
@@ -178,7 +178,11 @@ public class GameManager : MonoBehaviour
         ResetTerrainToOriginal();
     }
 
-    void OnDestroy() => ResetTerrainToOriginal();
+    void OnDestroy()
+    {
+        ResetTerrainToOriginal();
+        if (uiRoot) Destroy(uiRoot);
+    }
 
     void ResetTerrainToOriginal()
     {
@@ -234,7 +238,7 @@ public class GameManager : MonoBehaviour
     void UpdateBrushHint(Vector3 brushCenter, bool brushVisible)
     {
         if (!brushHint) return;
-        bool show = showBrushHint && currentMode != ToolMode.Water;
+        bool show = showBrushHint;
         brushHint.gameObject.SetActive(show);
         if (!show) return;
 
@@ -266,9 +270,10 @@ public class GameManager : MonoBehaviour
 
         string text = currentMode switch
         {
-            ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
-            ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F2}",
+            ToolMode.Dig => $"Копание  •  Кисть {brushSize:F1} м  •  Сила {strength:F3}",
+            ToolMode.Raise => $"Насыпь  •  Кисть {brushSize:F1} м  •  Сила {strength:F3}",
             ToolMode.Paint => $"Краска  •  Кисть {brushSize:F1} м  •  {paintStrength:F2}  •  {GetLayerName(paintLayer)}",
+            ToolMode.Water => "Вода  •  Нажмите для заполнения",
             ToolMode.Placement => "Размещение  •  Нажмите для установки",
             _ => ""
         };
@@ -401,7 +406,8 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            strength = Mathf.Clamp(strength + delta, 0.001f, 0.05f);
+            // Keep the terrain adjustment useful within its smaller range.
+            strength = Mathf.Clamp(strength + delta * 0.05f, 0.001f, 0.05f);
             if (strengthSlider) strengthSlider.SetValueWithoutNotify(strength);
         }
     }
@@ -410,7 +416,7 @@ public class GameManager : MonoBehaviour
     {
         if (!laserLine) return;
         Transform controller = GetRightController();
-        if (!controller) { laserLine.enabled = false; return; }
+        if (!controller) { laserLine.enabled = false; UpdateBrushHint(Vector3.zero, false); return; }
 
         Vector3 direction = Quaternion.AngleAxis(rayDownAngle, controller.right) * controller.forward;
         Ray ray = new Ray(controller.position, direction);
@@ -485,6 +491,7 @@ public class GameManager : MonoBehaviour
         uiActive = !uiActive;
         if (uiActive)
         {
+            CompleteActiveActions();
             Camera cam = Camera.main;
             if (cam) { uiRoot.transform.SetParent(cam.transform, false); uiRoot.transform.localPosition = new Vector3(0, 0, uiDistance); uiRoot.transform.localRotation = Quaternion.identity; uiRoot.transform.localScale = uiScale; }
             else { uiRoot.transform.SetParent(null); uiRoot.transform.position = new Vector3(0, 2, 1.5f); uiRoot.transform.LookAt(Vector3.zero); }
@@ -765,9 +772,12 @@ public class GameManager : MonoBehaviour
 
     string GetLayerName(int idx)
     {
-        if (targetTerrain && targetTerrain.terrainData.terrainLayers.Length > idx)
-            return "Слой-" + targetTerrain.terrainData.terrainLayers[idx].name;
-        return "Слой " + idx;
+        if (targetTerrain && targetTerrain.terrainData && idx >= 0 && idx < targetTerrain.terrainData.terrainLayers.Length)
+        {
+            TerrainLayer layer = targetTerrain.terrainData.terrainLayers[idx];
+            if (layer) return layer.name;
+        }
+        return "Нет покрытия";
     }
 
     void CompleteActiveActions()
@@ -798,11 +808,12 @@ public class GameManager : MonoBehaviour
         RectTransform pr = panel.GetComponent<RectTransform>();
         pr.anchorMin = Vector2.zero; pr.anchorMax = Vector2.one; pr.sizeDelta = Vector2.zero;
 
-        modeText = CreateText("ModeText", uiRoot.transform, "Режим: Копание", 28, TextAlignmentOptions.Left);
+        modeText = CreateText("ModeText", uiRoot.transform, "Инструмент: Копание", 28, TextAlignmentOptions.Left);
+        modeText.fontSize = uiStyle ? uiStyle.titleFontSize : 28f;
         modeText.rectTransform.anchorMin = new Vector2(0, 1); modeText.rectTransform.anchorMax = new Vector2(0, 1);
         modeText.rectTransform.pivot = new Vector2(0, 1);
         modeText.rectTransform.anchoredPosition = new Vector2(30, -15);
-        modeText.rectTransform.sizeDelta = new Vector2(350, 40);
+        modeText.rectTransform.sizeDelta = new Vector2(740, 40);
 
         float lm = 30f, sw = 740f, lh = 28f, sh = 24f;
         float yPos = -70f, rs = 50f;
@@ -813,7 +824,7 @@ public class GameManager : MonoBehaviour
         brushSizeText.rectTransform.anchoredPosition = new Vector2(lm, yPos);
         brushSizeText.rectTransform.sizeDelta = new Vector2(250, lh);
         yPos -= lh + 8;
-        brushSizeSlider = CreateSlider("BrushSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.1f, 10f, 2.5f);
+        brushSizeSlider = CreateSlider("BrushSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0.1f, 10f, brushSize);
         brushSizeSlider.onValueChanged.AddListener(v => brushSize = v);
         yPos -= sh + rs;
 
@@ -836,7 +847,7 @@ public class GameManager : MonoBehaviour
         paintStrengthText.rectTransform.sizeDelta = new Vector2(250, lh);
         paintStrengthTextOrigPos = paintStrengthText.rectTransform.anchoredPosition;
         yPos -= lh + 8;
-        paintStrengthSlider = CreateSlider("PaintSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0f, 2f, 0.5f);
+        paintStrengthSlider = CreateSlider("PaintSlider", uiRoot.transform, new Vector2(lm, yPos), new Vector2(sw, sh), 0f, 2f, paintStrength);
         paintStrengthSlider.onValueChanged.AddListener(v => paintStrength = v);
         paintStrengthSliderOrigPos = paintStrengthSlider.GetComponent<RectTransform>().anchoredPosition;
         yPos -= sh + 45f;
@@ -886,6 +897,7 @@ public class GameManager : MonoBehaviour
         crt.anchoredPosition = new Vector2(0, baseY);
         crt.sizeDelta = new Vector2(-hp * 2, bigH);
         clearWaterButton.onClick.AddListener(ClearAllWater);
+        AssignLayerRecursively(uiRoot, uiRoot.layer);
     }
 
     Button CreateModeButton(string name, string text, Vector2 pos, Vector2 size)
@@ -903,6 +915,8 @@ public class GameManager : MonoBehaviour
         if (!btn) return;
         Image img = btn.GetComponent<Image>();
         if (img) img.color = active ? activeColor : baseColor;
+        TMP_Text label = btn.GetComponentInChildren<TMP_Text>();
+        if (label) label.color = active ? Color.black : (uiStyle?.buttonTextColor ?? Color.white);
     }
 
     void AssignLayerRecursively(GameObject obj, int layer)
@@ -917,6 +931,7 @@ public class GameManager : MonoBehaviour
         go.transform.SetParent(parent, false);
         TMP_Text tmp = go.GetComponent<TextMeshProUGUI>();
         tmp.text = text; tmp.fontSize = uiStyle?.labelFontSize ?? size; tmp.alignment = align;
+        if (uiStyle && uiStyle.mainFont) tmp.font = uiStyle.mainFont;
         tmp.color = uiStyle?.textColor ?? Color.white;
         tmp.rectTransform.localScale = Vector3.one;
         return tmp;
@@ -936,6 +951,7 @@ public class GameManager : MonoBehaviour
         textGo.transform.SetParent(go.transform, false);
         TMP_Text tmp = textGo.GetComponent<TextMeshProUGUI>();
         tmp.text = text; tmp.fontSize = uiStyle?.buttonFontSize ?? 20; tmp.alignment = TextAlignmentOptions.Center;
+        if (uiStyle && uiStyle.mainFont) tmp.font = uiStyle.mainFont;
         tmp.color = uiStyle?.buttonTextColor ?? Color.white;
         tmp.rectTransform.anchorMin = Vector2.zero; tmp.rectTransform.anchorMax = Vector2.one; tmp.rectTransform.sizeDelta = Vector2.zero;
         return btn;
@@ -987,6 +1003,9 @@ public class GameManager : MonoBehaviour
 
     void UpdateUI()
     {
+        if (brushSizeSlider) brushSizeSlider.SetValueWithoutNotify(brushSize);
+        if (strengthSlider) strengthSlider.SetValueWithoutNotify(strength);
+        if (paintStrengthSlider) paintStrengthSlider.SetValueWithoutNotify(paintStrength);
         string modeStr = currentMode switch
         {
             ToolMode.Dig => "Копание",
@@ -997,7 +1016,7 @@ public class GameManager : MonoBehaviour
             _ => ""
         };
 
-        if (modeText) modeText.text = $"Режим: {modeStr}";
+        if (modeText) modeText.text = $"Инструмент: {modeStr}";
 
         if (currentMode != lastHighlightMode)
         {
@@ -1050,6 +1069,6 @@ public class GameManager : MonoBehaviour
         if (paintLayerText && paint) paintLayerText.text = GetLayerName(paintLayer);
     }
 
-    void PrevPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer - 1 + cnt) % cnt; }
-    void NextPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer + 1) % cnt; }
+    void PrevPaintLayer() { int cnt = targetTerrain && targetTerrain.terrainData ? targetTerrain.terrainData.alphamapLayers : 0; if (cnt > 0) paintLayer = (paintLayer - 1 + cnt) % cnt; }
+    void NextPaintLayer() { int cnt = targetTerrain && targetTerrain.terrainData ? targetTerrain.terrainData.alphamapLayers : 0; if (cnt > 0) paintLayer = (paintLayer + 1) % cnt; }
 }
