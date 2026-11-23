@@ -103,13 +103,15 @@ public class GameManager : MonoBehaviour
     private Button clearWaterButton;
     private Button removeLastWaterButton;
     private Button placementButton;
+    private GameObject defaultPlacementPrefab;
     private readonly List<Button> layerButtons = new();
     private Button previousLayersButton, nextLayersButton;
     private int layerPage;
     private TMP_Text radiusValueText, strengthValueText, paintValueText;
     private TMP_Text toolNameText, toolDescriptionText, paintSectionText;
     private GameObject infoCard, paintCard, paintParametersCard;
-    private Image digUnderline, raiseUnderline, waterUnderline, paintUnderline;
+    private Image digUnderline, raiseUnderline, waterUnderline, paintUnderline, placementUnderline;
+    private TMP_Text placementTitleText, placementHelpText;
     private Sprite roundedUISprite;
     private Texture2D roundedUITexture;
     private ToolMode styledMode = (ToolMode)(-1);
@@ -163,6 +165,7 @@ public class GameManager : MonoBehaviour
 
         if (targetTerrain != null) materialLibrary.ApplyAllToTerrain(targetTerrain);
 
+        if (!placementPrefab) placementPrefab = defaultPlacementPrefab = CreateDefaultPlacementPrefab();
         CreateUI();
         if (uiRoot != null) uiRoot.SetActive(false);
         lastUIDistance = uiDistance;
@@ -189,6 +192,7 @@ public class GameManager : MonoBehaviour
         if (uiRoot) Destroy(uiRoot);
         if (roundedUISprite) Destroy(roundedUISprite);
         if (roundedUITexture) Destroy(roundedUITexture);
+        if (defaultPlacementPrefab) Destroy(defaultPlacementPrefab);
     }
 
     void ResetTerrainToOriginal()
@@ -589,6 +593,7 @@ public class GameManager : MonoBehaviour
         if (!placementPrefab) { Debug.LogWarning("Назначьте Placement Prefab."); return; }
         CompleteActiveActions();
         GameObject instance = Instantiate(placementPrefab, worldPos, placementPrefab.transform.rotation);
+        instance.SetActive(true);
         instance.transform.localScale = placementScale;
         Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
         if (renderers.Length > 0)
@@ -599,6 +604,27 @@ public class GameManager : MonoBehaviour
         }
         instance.transform.position += Vector3.down * placementSink;
         actionHistory.Add(new PlacementAction(placementPrefab, instance));
+    }
+
+    GameObject CreateDefaultPlacementPrefab()
+    {
+        GameObject rock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        rock.name = "Камень";
+        rock.SetActive(false);
+        rock.transform.SetParent(transform, false);
+        Mesh mesh = rock.GetComponent<MeshFilter>().mesh;
+        Vector3[] vertices = mesh.vertices;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 v = vertices[i];
+            float irregularity = 0.86f + 0.22f * Mathf.PerlinNoise(v.x * 4f + 5f, v.z * 4f + v.y * 2f + 5f);
+            vertices[i] = Vector3.Scale(v * irregularity, new Vector3(1.1f, 0.7f, 0.95f));
+        }
+        mesh.vertices = vertices;
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        rock.GetComponent<Renderer>().material.color = new Color(0.38f, 0.40f, 0.37f);
+        return rock;
     }
 
     // =========================================================
@@ -871,8 +897,11 @@ public class GameManager : MonoBehaviour
         raiseButton = MakeModeButton("Raise", "Насыпать", ToolMode.Raise, out raiseUnderline);
         waterButton = MakeModeButton("Water", "Вода", ToolMode.Water, out waterUnderline);
         paintButton = MakeModeButton("Paint", "Покраска", ToolMode.Paint, out paintUnderline);
-        placementButton = MakeButton("Placement", "Объекты", new Vector2(620, 20), new Vector2(150, 44));
-        placementButton.onClick.AddListener(() => { CompleteActiveActions(); currentMode = ToolMode.Placement; UpdateUI(); });
+        placementButton = MakeModeButton("Placement", "Объекты", ToolMode.Placement, out placementUnderline);
+        placementTitleText = MakeText("PlacementTitle", "Размещение объектов", new Vector2(48, 132), new Vector2(450, 42), 27);
+        placementTitleText.fontStyle = FontStyles.Bold;
+        placementHelpText = MakeText("PlacementHelp", defaultPlacementPrefab ? "Камень готов к размещению. Наведите на поверхность и нажмите Grip." : "Объект готов к размещению. Наведите на поверхность и нажмите Grip.", new Vector2(48, 204), new Vector2(440, 110), 21);
+        placementHelpText.color = MutedColor;
 
         removeLastWaterButton = MakeButton("RemoveLastWater", "Отменить последнюю воду", new Vector2(48, 142), new Vector2(456, 66));
         removeLastWaterButton.onClick.AddListener(RemoveLastWater);
@@ -989,9 +1018,9 @@ public class GameManager : MonoBehaviour
 
     Button MakeModeButton(string name, string label, ToolMode mode, out Image underline)
     {
-        Button button = MakeButton(name, label, Vector2.zero, new Vector2(176, 54));
+        Button button = MakeButton(name, label, Vector2.zero, new Vector2(142, 54));
         button.onClick.AddListener(() => { CompleteActiveActions(); currentMode = mode; UpdateUI(); });
-        underline = MakeImage("Selected", button.transform, new Vector2(24, 54), new Vector2(128, 4), AccentColor);
+        underline = MakeImage("Selected", button.transform, new Vector2(17, 54), new Vector2(108, 4), AccentColor);
         underline.raycastTarget = false;
         return button;
     }
@@ -1018,15 +1047,31 @@ public class GameManager : MonoBehaviour
         bar.rectTransform.anchorMax = new Vector2(1, 0.5f);
         bar.rectTransform.pivot = new Vector2(0.5f, 0.5f);
         bar.rectTransform.anchoredPosition = Vector2.zero;
-        bar.rectTransform.sizeDelta = new Vector2(0, 6);
-        Image fill = MakeImage("Fill", go.transform, new Vector2(0, 11), new Vector2(0, 6), AccentColor);
+        bar.rectTransform.sizeDelta = new Vector2(-24, 6);
+        GameObject fillArea = new GameObject("FillArea", typeof(RectTransform));
+        fillArea.transform.SetParent(go.transform, false);
+        RectTransform fillAreaRect = fillArea.GetComponent<RectTransform>();
+        fillAreaRect.anchorMin = new Vector2(0, 0.5f);
+        fillAreaRect.anchorMax = new Vector2(1, 0.5f);
+        fillAreaRect.pivot = new Vector2(0.5f, 0.5f);
+        fillAreaRect.anchoredPosition = Vector2.zero;
+        fillAreaRect.sizeDelta = new Vector2(-24, 6);
+        Image fill = MakeImage("Fill", fillArea.transform, Vector2.zero, Vector2.zero, AccentColor);
         fill.raycastTarget = false;
         ApplyRounded(fill);
-        fill.rectTransform.anchorMin = new Vector2(0, 0.5f);
-        fill.rectTransform.anchorMax = new Vector2(0, 0.5f);
+        fill.rectTransform.anchorMin = Vector2.zero;
+        fill.rectTransform.anchorMax = Vector2.one;
         fill.rectTransform.pivot = new Vector2(0.5f, 0.5f);
         fill.rectTransform.anchoredPosition = Vector2.zero;
-        Image handle = MakeImage("Handle", go.transform, new Vector2(0, 0), new Vector2(24, 24), AccentColor);
+        GameObject handleArea = new GameObject("HandleArea", typeof(RectTransform));
+        handleArea.transform.SetParent(go.transform, false);
+        RectTransform handleAreaRect = handleArea.GetComponent<RectTransform>();
+        handleAreaRect.anchorMin = new Vector2(0, 0.5f);
+        handleAreaRect.anchorMax = new Vector2(1, 0.5f);
+        handleAreaRect.pivot = new Vector2(0.5f, 0.5f);
+        handleAreaRect.anchoredPosition = Vector2.zero;
+        handleAreaRect.sizeDelta = new Vector2(-24, 0);
+        Image handle = MakeImage("Handle", handleArea.transform, Vector2.zero, new Vector2(24, 24), AccentColor);
         handle.raycastTarget = false;
         Texture2D circle = new Texture2D(32, 32, TextureFormat.RGBA32, false);
         for (int y = 0; y < 32; y++)
@@ -1078,12 +1123,12 @@ public class GameManager : MonoBehaviour
             ToolMode.Placement => "Размещайте объекты на поверхности.",
             _ => ""
         };
-        Button[] modes = { digButton, raiseButton, waterButton, paintButton };
-        Image[] underlines = { digUnderline, raiseUnderline, waterUnderline, paintUnderline };
-        ToolMode[] values = { ToolMode.Dig, ToolMode.Raise, ToolMode.Water, ToolMode.Paint };
+        Button[] modes = { digButton, raiseButton, waterButton, paintButton, placementButton };
+        Image[] underlines = { digUnderline, raiseUnderline, waterUnderline, paintUnderline, placementUnderline };
+        ToolMode[] values = { ToolMode.Dig, ToolMode.Raise, ToolMode.Water, ToolMode.Paint, ToolMode.Placement };
         for (int i = 0; i < modes.Length; i++)
         {
-            modes[i].GetComponent<RectTransform>().anchoredPosition = new Vector2(24 + i * 194, -428);
+            modes[i].GetComponent<RectTransform>().anchoredPosition = new Vector2(24 + i * 152, -428);
             underlines[i].gameObject.SetActive(currentMode == values[i]);
             if (styledMode != currentMode)
                 SetButtonColors(modes[i], currentMode == values[i] ? new Color32(38, 73, 60, 255) : ButtonColor);
@@ -1118,7 +1163,8 @@ public class GameManager : MonoBehaviour
         nextLayersButton.gameObject.SetActive(pagedLayers);
         previousLayersButton.interactable = layerPage > 0;
         nextLayersButton.interactable = (layerPage + 1) * 8 < layerButtons.Count;
-        placementButton.gameObject.SetActive(placementPrefab && (terrain || currentMode == ToolMode.Placement));
+        placementTitleText.gameObject.SetActive(currentMode == ToolMode.Placement);
+        placementHelpText.gameObject.SetActive(currentMode == ToolMode.Placement);
         bool hasWater = waterHistory.Count > 0;
         removeLastWaterButton.interactable = hasWater;
         clearWaterButton.interactable = hasWater;

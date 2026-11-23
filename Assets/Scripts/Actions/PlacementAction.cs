@@ -34,6 +34,7 @@ public class PlacementAction : IUndoableAction
             return;
 
         instance = Object.Instantiate(prefab, position, rotation);
+        instance.SetActive(true);
         instance.transform.localScale = scale;
     }
 }
