@@ -108,6 +108,9 @@ public class GameManager : MonoBehaviour
     private int layerPage;
     private TMP_Text radiusValueText, strengthValueText, paintValueText;
     private Image digUnderline, raiseUnderline, waterUnderline, paintUnderline;
+    private Sprite roundedUISprite;
+    private Texture2D roundedUITexture;
+    private ToolMode styledMode = (ToolMode)(-1);
 
     private class WaterRecord
     {
@@ -182,6 +185,8 @@ public class GameManager : MonoBehaviour
     {
         ResetTerrainToOriginal();
         if (uiRoot) Destroy(uiRoot);
+        if (roundedUISprite) Destroy(roundedUISprite);
+        if (roundedUITexture) Destroy(roundedUITexture);
     }
 
     void ResetTerrainToOriginal()
@@ -800,11 +805,11 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    static readonly Color PanelColor = new Color32(20, 23, 28, 255);
-    static readonly Color ButtonColor = new Color32(35, 40, 48, 255);
-    static readonly Color TrackColor = new Color32(55, 62, 72, 255);
-    static readonly Color AccentColor = new Color32(111, 211, 156, 255);
-    static readonly Color MutedColor = new Color32(180, 188, 198, 255);
+    static readonly Color PanelColor = new Color32(19, 26, 30, 255);
+    static readonly Color ButtonColor = new Color32(37, 48, 52, 255);
+    static readonly Color TrackColor = new Color32(65, 78, 81, 255);
+    static readonly Color AccentColor = new Color32(112, 220, 167, 255);
+    static readonly Color MutedColor = new Color32(190, 205, 202, 255);
 
     void CreateUI()
     {
@@ -812,7 +817,13 @@ public class GameManager : MonoBehaviour
         uiRoot.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
         uiRoot.GetComponent<RectTransform>().sizeDelta = new Vector2(800, 500);
         uiRoot.layer = LayerMask.NameToLayer("UI");
-        MakeImage("Panel", uiRoot.transform, Vector2.zero, new Vector2(800, 500), PanelColor);
+        CreateRoundedUISprite();
+        Image frame = MakeImage("PanelFrame", uiRoot.transform, Vector2.zero, new Vector2(800, 500), new Color32(66, 91, 83, 255));
+        ApplyRounded(frame);
+        Image panel = MakeImage("Panel", uiRoot.transform, new Vector2(2, 2), new Vector2(796, 496), PanelColor);
+        ApplyRounded(panel);
+        Image separator = MakeImage("NavigationDivider", uiRoot.transform, new Vector2(20, 400), new Vector2(760, 1), new Color32(49, 66, 63, 255));
+        separator.raycastTarget = false;
 
         brushSizeText = MakeText("Radius", "Радиус", new Vector2(20, 28), new Vector2(180, 36), 27);
         radiusValueText = MakeText("RadiusValue", "", new Vector2(710, 85), new Vector2(75, 30), 21);
@@ -861,8 +872,33 @@ public class GameManager : MonoBehaviour
         previousLayersButton.onClick.AddListener(() => { layerPage = Mathf.Max(0, layerPage - 1); UpdateUI(); });
         nextLayersButton.onClick.AddListener(() => { layerPage = Mathf.Min((layerButtons.Count - 1) / 8, layerPage + 1); UpdateUI(); });
         paintLayerText = MakeText("SelectedLayer", "", new Vector2(20, 180), new Vector2(620, 28), 18);
+        paintLayerText.color = MutedColor;
         AssignLayerRecursively(uiRoot, uiRoot.layer);
         UpdateUI();
+    }
+
+    void CreateRoundedUISprite()
+    {
+        const int size = 64;
+        const float radius = 15f;
+        roundedUITexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        roundedUITexture.name = "Rounded UI";
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = Mathf.Max(Mathf.Abs(x - 31.5f) - (31.5f - radius), 0f);
+                float dy = Mathf.Max(Mathf.Abs(y - 31.5f) - (31.5f - radius), 0f);
+                float alpha = Mathf.Clamp01(radius + 0.5f - Mathf.Sqrt(dx * dx + dy * dy));
+                roundedUITexture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        roundedUITexture.Apply();
+        roundedUISprite = Sprite.Create(roundedUITexture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(16, 16, 16, 16));
+    }
+
+    void ApplyRounded(Image image)
+    {
+        image.sprite = roundedUISprite;
+        image.type = Image.Type.Sliced;
     }
 
     Image MakeImage(string name, Transform parent, Vector2 position, Vector2 size, Color color)
@@ -897,8 +933,10 @@ public class GameManager : MonoBehaviour
     Button MakeButton(string name, string label, Vector2 position, Vector2 size)
     {
         Image image = MakeImage(name, uiRoot.transform, position, size, ButtonColor);
+        ApplyRounded(image);
         Button button = image.gameObject.AddComponent<Button>();
         button.targetGraphic = image;
+        SetButtonColors(button, ButtonColor);
         TMP_Text text = MakeText(name + "Label", label, Vector2.zero, size, 22);
         text.transform.SetParent(image.transform, false);
         text.rectTransform.anchorMin = Vector2.zero;
@@ -906,6 +944,19 @@ public class GameManager : MonoBehaviour
         text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
         text.alignment = TextAlignmentOptions.Center;
         return button;
+    }
+
+    void SetButtonColors(Button button, Color normal)
+    {
+        ColorBlock colors = button.colors;
+        colors.normalColor = normal;
+        colors.highlightedColor = Color.Lerp(normal, AccentColor, 0.24f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.pressedColor = Color.Lerp(normal, AccentColor, 0.40f);
+        colors.disabledColor = new Color32(39, 48, 49, 150);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.12f;
+        button.colors = colors;
     }
 
     Button MakeModeButton(string name, string label, ToolMode mode, out Image underline)
@@ -934,6 +985,7 @@ public class GameManager : MonoBehaviour
         track.rectTransform.sizeDelta = new Vector2(0, 48);
         Image bar = MakeImage("Track", track.transform, Vector2.zero, Vector2.zero, TrackColor);
         bar.raycastTarget = false;
+        ApplyRounded(bar);
         bar.rectTransform.anchorMin = new Vector2(0, 0.5f);
         bar.rectTransform.anchorMax = new Vector2(1, 0.5f);
         bar.rectTransform.pivot = new Vector2(0.5f, 0.5f);
@@ -941,6 +993,7 @@ public class GameManager : MonoBehaviour
         bar.rectTransform.sizeDelta = new Vector2(0, 6);
         Image fill = MakeImage("Fill", go.transform, new Vector2(0, 11), new Vector2(0, 6), AccentColor);
         fill.raycastTarget = false;
+        ApplyRounded(fill);
         fill.rectTransform.anchorMin = new Vector2(0, 0.5f);
         fill.rectTransform.anchorMax = new Vector2(0, 0.5f);
         fill.rectTransform.pivot = new Vector2(0.5f, 0.5f);
@@ -984,7 +1037,10 @@ public class GameManager : MonoBehaviour
         {
             modes[i].GetComponent<RectTransform>().anchoredPosition = new Vector2(20 + i * 200, -420);
             underlines[i].gameObject.SetActive(currentMode == values[i]);
+            if (styledMode != currentMode)
+                SetButtonColors(modes[i], currentMode == values[i] ? new Color32(38, 73, 60, 255) : ButtonColor);
         }
+        styledMode = currentMode;
         brushSizeText.gameObject.SetActive(terrain || paint);
         brushSizeSlider.gameObject.SetActive(terrain || paint);
         radiusValueText.gameObject.SetActive(terrain || paint);
