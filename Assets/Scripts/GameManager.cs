@@ -35,6 +35,7 @@ public class GameManager : MonoBehaviour
     // ========== Object Placement ==========
     public GameObject placementPrefab;
     public GameObject[] placementPrefabs; // префабы для размещения (гора, скала и т.д.)
+    public string[] placementObjectLabels; // кастомные названия кнопок объектов (опционально)
     public int selectedPlacementIndex = 0;
     private List<Button> placementObjectButtons;
     public Vector3 placementScale = Vector3.one;
@@ -1218,7 +1219,9 @@ public class GameManager : MonoBehaviour
             for (int i = 0; i < placementPrefabs.Length; i++)
             {
                 int idx = i;
-                string objName = placementPrefabs[i] ? placementPrefabs[i].name : $"Объект {i}";
+                string objName = placementObjectLabels != null && i < placementObjectLabels.Length && !string.IsNullOrEmpty(placementObjectLabels[i])
+                    ? placementObjectLabels[i]
+                    : (placementPrefabs[i] ? placementPrefabs[i].name : $"Объект {i}");
                 Button btn = CreateModeButton($"PlaceObj{i}", objName, new Vector2(sx + i * (mbw + spx), objY), new Vector2(mbw, mbh));
                 btn.onClick.AddListener(() => SelectPlacementObject(idx));
                 btn.gameObject.SetActive(false); // скрыто по умолчанию
