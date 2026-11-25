@@ -42,6 +42,15 @@ public class GameManager : MonoBehaviour
     public float placementSink = 1f;
     public float placementIndicatorRadius = 0.5f;
 
+    // ========== Placement Preview ==========
+    private GameObject placementPreview;
+    private Material previewMaterial;
+
+    // ========== Placement Preview ==========
+    private GameObject placementPreview;
+    private Material previewMaterial;
+    private const float previewSize = 0.5f;
+
     // ========== Particles Settings ==========
     [Header("Particles Settings")]
     public int digParticleCount = 12;
@@ -356,6 +365,9 @@ public class GameManager : MonoBehaviour
 
         UpdateLaser(grip);
 
+        if (currentMode == ToolMode.Placement) {
+            UpdatePlacementPreview();
+        }
         HandleBrushButtons();
 
         if (!uiActive)
@@ -1454,4 +1466,57 @@ public class GameManager : MonoBehaviour
 
     void PrevPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer - 1 + cnt) % cnt; }
     void NextPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer + 1) % cnt; }
-}
+    void UpdatePlacementPreview()
+    {
+        if (placementPreview == null) return;
+
+        if (targetTerrain == null) {
+            if (placementPreview.activeSelf) placementPreview.SetActive(false);
+            return;
+        }
+
+        Vector3 worldPos = GetRightControllerPosition();
+        if (worldPos == Vector3.zero) return;
+
+        float y = targetTerrain.SampleHeight(worldPos) + targetTerrain.transform.position.y;
+        Vector3 previewPos = new Vector3(worldPos.x, y + 0.1f, worldPos.z);
+        placementPreview.transform.position = previewPos;
+
+        // Make it visible
+        placementPreview.SetActive(true);
+    }
+
+    Vector3 GetRightControllerPosition()
+    {
+        if (GetRightController() != null)
+            return GetRightController().position;
+        return Vector3.zero;
+    }}
+
+
+    void UpdatePlacementPreview()
+    {
+        if (placementPreview == null) return;
+        
+        if (targetTerrain == null) {
+            if (placementPreview.activeSelf) placementPreview.SetActive(false);
+            return;
+        }
+        
+        Vector3 worldPos = GetRightControllerPosition();
+        if (worldPos == Vector3.zero) return;
+        
+        float y = targetTerrain.SampleHeight(worldPos) + targetTerrain.transform.position.y;
+        Vector3 previewPos = new Vector3(worldPos.x, y + 0.1f, worldPos.z);
+        placementPreview.transform.position = previewPos;
+        
+        // Make it visible
+        placementPreview.SetActive(true);
+    }
+    
+    Vector3 GetRightControllerPosition()
+    {
+        if (GetRightController() != null)
+            return GetRightController().position;
+        return Vector3.zero;
+    }
