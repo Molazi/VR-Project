@@ -34,6 +34,9 @@ public class GameManager : MonoBehaviour
 
     // ========== Object Placement ==========
     public GameObject placementPrefab;
+    public GameObject[] placementPrefabs; // префабы для размещения (гора, скала и т.д.)
+    public int selectedPlacementIndex = 0;
+    private List<Button> placementObjectButtons;
     public Vector3 placementScale = Vector3.one;
     public float placementSink = 1f;
     public float placementIndicatorRadius = 0.5f;
@@ -167,6 +170,12 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
+        if (placementPrefabs != null && placementPrefabs.Length > 0)
+        {
+            selectedPlacementIndex = Mathf.Clamp(selectedPlacementIndex, 0, placementPrefabs.Length - 1);
+            placementPrefab = placementPrefabs[selectedPlacementIndex];
+        }
+
         if (currentTerrainData != null)
         {
             int res = currentTerrainData.heightmapResolution;
@@ -612,7 +621,11 @@ public class GameManager : MonoBehaviour
         if (mask == 0) mask = -1;
         Ray ray = new Ray(ctrl.position, dir);
         if (Physics.Raycast(ray, out RaycastHit hit, maxDistance, mask))
-            if (hit.collider.GetComponent<Terrain>()) PerformAction(hit.point);
+        {
+            // Для размещения объектов достаточно любого попадания (земля, скала и т.д.)
+            if (currentMode == ToolMode.Placement || hit.collider.GetComponent<Terrain>())
+                PerformAction(hit.point);
+        }
     }
 
     void ApplyDeformTool(
@@ -681,9 +694,14 @@ public class GameManager : MonoBehaviour
     
     void PlaceObject(Vector3 worldPos)
     {
+        Debug.Log($"[GameManager] PlaceObject called at {worldPos}, prefab={placementPrefab?.name}, selectedIndex={selectedPlacementIndex}");
+
+        if (placementPrefabs != null && placementPrefabs.Length > 0)
+            placementPrefab = placementPrefabs[selectedPlacementIndex];
+
         if (!placementPrefab)
         {
-            Debug.LogWarning("Для размещения назначь модель в поле Placement Prefab.");
+            Debug.LogWarning("[GameManager] Placement Prefab is null! Assign Mountain.prefab / Rock.prefab in the Placement Prefabs array on GameManager.");
             return;
         }
 
@@ -691,17 +709,63 @@ public class GameManager : MonoBehaviour
 
         GameObject instance = Instantiate(placementPrefab, worldPos, placementPrefab.transform.rotation);
         instance.transform.localScale = placementScale;
+        Debug.Log($"[GameManager] Instantiated {instance.name} at {instance.transform.position}, active={instance.activeInHierarchy}, renderer count={instance.GetComponentsInChildren<Renderer>().Length}");
 
         Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
         if (renderers.Length > 0)
         {
             Bounds bounds = renderers[0].bounds;
             foreach (Renderer renderer in renderers) bounds.Encapsulate(renderer.bounds);
-            instance.transform.position += Vector3.up * (worldPos.y - bounds.min.y);
+            Debug.Log($"[GameManager] Bounds min={bounds.min}, max={bounds.max}, size={bounds.size}");
+
+            if (bounds.size.sqrMagnitude > 0.0001f)
+            {
+                instance.transform.position += Vector3.up * (worldPos.y - bounds.min.y);
+            }
+            else
+            {
+                // Нулевой размер меша — просто ставим на точку попадания чуть выше поверхности
+                instance.transform.position = worldPos + Vector3.up * 0.1f;
+            }
+        }
+        else
+        {
+            instance.transform.position = worldPos + Vector3.up * 0.1f;
         }
 
         instance.transform.position += Vector3.down * placementSink;
+        Debug.Log($"[GameManager] Final position={instance.transform.position}, sink={placementSink}");
         actionHistory.Add(new PlacementAction(placementPrefab, instance));
+    }
+
+    void SelectPlacementObject(int index)
+    {
+        if (placementPrefabs == null || placementPrefabs.Length == 0)
+            return;
+
+        if (index < 0 || index >= placementPrefabs.Length)
+            return;
+
+        selectedPlacementIndex = index;
+        placementPrefab = placementPrefabs[index];
+        UpdatePlacementButtons();
+    }
+
+    void UpdatePlacementButtons()
+    {
+        if (placementObjectButtons == null)
+            return;
+
+        Color baseColor = uiStyle?.buttonColor ?? new Color(0.3f, 0.3f, 0.3f, 0.8f);
+        Color activeColor = new Color(0.2f, 0.6f, 1f);
+
+        for (int i = 0; i < placementObjectButtons.Count; i++)
+        {
+            Button btn = placementObjectButtons[i];
+            if (!btn) continue;
+            Image img = btn.GetComponent<Image>();
+            if (img) img.color = (i == selectedPlacementIndex) ? activeColor : baseColor;
+        }
     }
 
 
@@ -1144,6 +1208,24 @@ public class GameManager : MonoBehaviour
         placementButton.onClick.AddListener(() => currentMode = ToolMode.Placement);
 
         float bigH = 65f, hp = 30f, gap = 10f;
+
+        // Кнопки выбора объекта для размещения (гора, скала и т.д.)
+        // Размещаем во второй строке под кнопками режимов, внутри меню (якорь 0,0 как у остальных кнопок)
+        placementObjectButtons = new List<Button>();
+        float objY = bm + mbh + 10f; // вторая строка сразу над первой
+        if (placementPrefabs != null)
+        {
+            for (int i = 0; i < placementPrefabs.Length; i++)
+            {
+                int idx = i;
+                string objName = placementPrefabs[i] ? placementPrefabs[i].name : $"Объект {i}";
+                Button btn = CreateModeButton($"PlaceObj{i}", objName, new Vector2(sx + i * (mbw + spx), objY), new Vector2(mbw, mbh));
+                btn.onClick.AddListener(() => SelectPlacementObject(idx));
+                btn.gameObject.SetActive(false); // скрыто по умолчанию
+                placementObjectButtons.Add(btn);
+            }
+        }
+
         float baseY = bm + mbh + 10f;
 
         clearWaterButton = CreateButton("ClearAllWaterBtn", uiRoot.transform, "Удалить всю воду", Vector2.zero, Vector2.zero);
@@ -1299,11 +1381,22 @@ public class GameManager : MonoBehaviour
             lastHighlightMode = currentMode;
         }
 
+        UpdatePlacementButtons();
+
         bool digRaise = currentMode is ToolMode.Dig or ToolMode.Raise;
         bool paint = currentMode == ToolMode.Paint;
         bool water = currentMode == ToolMode.Water;
 
         bool placement = currentMode == ToolMode.Placement;
+
+        // Кнопки выбора объекта показываем только в режиме Размещение
+        if (placementObjectButtons != null)
+        {
+            foreach (var btn in placementObjectButtons)
+            {
+                if (btn) btn.gameObject.SetActive(placement);
+            }
+        }
 
         if (brushSizeText) brushSizeText.gameObject.SetActive(!water && !placement);
         if (brushSizeSlider) brushSizeSlider.gameObject.SetActive(!water && !placement);

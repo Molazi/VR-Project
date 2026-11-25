@@ -1,2 +1,15 @@
 fileFormatVersion: 2
 guid: 6d3912869989bb0488aa1bb7654b500a
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - waterPrefab: {instanceID: 0}
+  - uiStyle: {instanceID: 0}
+  - targetTerrain: {instanceID: 0}
+  - placementPrefab: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
