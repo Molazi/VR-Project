@@ -1465,33 +1465,6 @@ public class GameManager : MonoBehaviour
 
     void PrevPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer - 1 + cnt) % cnt; }
     void NextPaintLayer() { int cnt = targetTerrain?.terrainData.alphamapLayers ?? 1; paintLayer = (paintLayer + 1) % cnt; }
-    void UpdatePlacementPreview()
-    {
-        if (placementPreview == null) return;
-
-        if (targetTerrain == null) {
-            if (placementPreview.activeSelf) placementPreview.SetActive(false);
-            return;
-        }
-
-        Vector3 worldPos = GetRightControllerPosition();
-        if (worldPos == Vector3.zero) return;
-
-        float y = targetTerrain.SampleHeight(worldPos) + targetTerrain.transform.position.y;
-        Vector3 previewPos = new Vector3(worldPos.x, y + 0.1f, worldPos.z);
-        placementPreview.transform.position = previewPos;
-
-        // Make it visible
-        placementPreview.SetActive(true);
-    }
-
-    Vector3 GetRightControllerPosition()
-    {
-        if (GetRightController() != null)
-            return GetRightController().position;
-        return Vector3.zero;
-    }}
-
 
     void UpdatePlacementPreview()
     {
@@ -1515,7 +1488,9 @@ public class GameManager : MonoBehaviour
     
     Vector3 GetRightControllerPosition()
     {
-        if (GetRightController() != null)
-            return GetRightController().position;
+        // Use the cached right controller from the existing code
+        Transform rightController = GetRightController();
+        if (rightController != null)
+            return rightController.position;
         return Vector3.zero;
-    }
+    }}
