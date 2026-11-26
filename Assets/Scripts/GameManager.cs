@@ -44,13 +44,7 @@ public class GameManager : MonoBehaviour
     public float placementIndicatorRadius = 0.5f;
 
     // ========== Placement Preview ==========
-    private GameObject placementPreview;
-    private Material previewMaterial;
 
-    // ========== Placement Preview ==========
-    private GameObject placementPreview;
-    private Material previewMaterial;
-    private const float previewSize = 0.5f;
 
     // ========== Particles Settings ==========
     [Header("Particles Settings")]
