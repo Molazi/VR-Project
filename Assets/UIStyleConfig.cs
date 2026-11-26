@@ -17,11 +17,11 @@ public class UIStyleConfig : ScriptableObject
     public Color accentColor = new Color(0.83f, 0.25f, 0.85f);
     public Color buttonNormal = panelBackground;
     public Color buttonHover = primaryColor;
-    public Color buttonPressed = secondaryColor; = new Color(0.4f, 0.6f, 1f);
+    public Color buttonPressed = secondaryColor;
     public Color sliderBgColor = new Color(0.2f, 0.2f, 0.2f);
 
     [Header("Fonts")]
-    public TMP_FontAsset mainFont; // если хочешь менять шрифт, перетащи сюда свой
+    public TMP_FontAsset mainFont; // пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 
     [Header("Sizes")]
     public float titleFontSize = 28f;
@@ -30,6 +30,6 @@ public class UIStyleConfig : ScriptableObject
     public Vector2 buttonSize = new Vector2(100, 44);
     public Vector2 sliderSize = new Vector2(180, 22);
     [Header("VR Positioning")]
-    public float uiDistance = 1.2f;    // расстояние от камеры (метры)
-    public Vector3 uiScale = new Vector3(0.003f, 0.003f, 0.003f); // общий масштаб
+    public float uiDistance = 1.2f;    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅ)
+    public Vector3 uiScale = new Vector3(0.003f, 0.003f, 0.003f); // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 }
