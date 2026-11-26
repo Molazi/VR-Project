@@ -29,9 +29,10 @@ public class GameManager : MonoBehaviour
     public float paintStrength = 0.5f;
     public float actionInterval = 0.05f;
 
-    // ========== Target Terrain ==========
-    public Terrain targetTerrain;
-
+    // ========== Placement Preview ==========
+    private GameObject placementPreview;
+    private Material previewMaterial;
+    private const float previewSize = 0.5f;
     // ========== Object Placement ==========
     public GameObject placementPrefab;
     public GameObject[] placementPrefabs; // префабы для размещения (гора, скала и т.д.)
@@ -369,8 +370,6 @@ public class GameManager : MonoBehaviour
             UpdatePlacementPreview();
         }
         HandleBrushButtons();
-
-        if (!uiActive)
         {
             if (currentMode is ToolMode.Water or ToolMode.Placement)
             {
