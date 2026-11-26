@@ -37,6 +37,7 @@ public class GameManager : MonoBehaviour
     public GameObject placementPrefab;
     public GameObject[] placementPrefabs; // префабы для размещения (гора, скала и т.д.)
     public string[] placementObjectLabels; // кастомные названия кнопок объектов (опционально)
+    public Terrain targetTerrain;
     public int selectedPlacementIndex = 0;
     private List<Button> placementObjectButtons;
     public Vector3 placementScale = Vector3.one;
