@@ -1131,7 +1131,7 @@ public class GameManager : MonoBehaviour
 
         GameObject panel = new GameObject("Panel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         panel.transform.SetParent(uiRoot.transform, false);
-        panel.GetComponent<Image>().color = uiStyle?.panelBgColor ?? new Color(0, 0, 0, 0.5f);
+        panel.GetComponent<Image>().color = uiStyle?.panelBackground ?? new Color(0, 0, 0, 0.5f);
         RectTransform pr = panel.GetComponent<RectTransform>();
         pr.anchorMin = Vector2.zero; pr.anchorMax = Vector2.one; pr.sizeDelta = Vector2.zero;
 
@@ -1345,7 +1345,7 @@ public class GameManager : MonoBehaviour
 
         GameObject fill = new GameObject("Fill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         fill.transform.SetParent(fa.transform, false);
-        fill.GetComponent<Image>().color = uiStyle?.sliderFillColor ?? new Color(0.4f, 0.6f, 1f);
+        fill.GetComponent<Image>().color = uiStyle?.primaryColor ?? new Color(0.4f, 0.6f, 1f);
         RectTransform fr = fill.GetComponent<RectTransform>();
         fr.anchorMin = Vector2.zero; fr.anchorMax = Vector2.one; fr.sizeDelta = Vector2.zero;
 
