@@ -15,9 +15,11 @@ public class UIStyleConfig : ScriptableObject
     public Color warningColor = new Color(1f, 0.6f, 0.1f);
     public Color errorColor = new Color(0.9f, 0.2f, 0.2f);
     public Color accentColor = new Color(0.83f, 0.25f, 0.85f);
-    public Color buttonNormal = panelBackground;
-    public Color buttonHover = primaryColor;
-    public Color buttonPressed = secondaryColor;
+    public Color primaryColor = new Color(0.2f, 0.65f, 0.95f);
+    public Color secondaryColor = new Color(0.25f, 0.55f, 0.9f);
+    public Color buttonNormal = new Color(0.2f, 0.3f, 0.3f, 0.8f);
+    public Color buttonHover = new Color(0.2f, 0.65f, 0.95f);
+    public Color buttonPressed = new Color(0.25f, 0.55f, 0.9f);
     public Color sliderBgColor = new Color(0.2f, 0.2f, 0.2f);
 
     [Header("Fonts")]
